@@ -1,0 +1,2625 @@
+VERSION 5.00
+Begin {9EB8768B-CDFA-44DF-8F3E-857A8405E1DB} rptStockCard 
+   BorderStyle     =   3  'Fixed Dialog
+   Caption         =   "CPEntrepotdll - rptStockCard (ActiveReport)"
+   ClientHeight    =   5985
+   ClientLeft      =   45
+   ClientTop       =   330
+   ClientWidth     =   15285
+   Icon            =   "rptStockCard.dsx":0000
+   MaxButton       =   0   'False
+   MinButton       =   0   'False
+   ShowInTaskbar   =   0   'False
+   StartUpPosition =   1  'CenterOwner
+   WindowState     =   2  'Maximized
+   _ExtentX        =   26961
+   _ExtentY        =   10557
+   SectionData     =   "rptStockCard.dsx":000C
+End
+Attribute VB_Name = "rptStockCard"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = False
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Option Explicit
+
+Private m_lngUserID As Long
+Private mconSADBEL As ADODB.Connection
+Private mrstMovements As ADODB.Recordset
+Private mrstStockCardOff As ADODB.Recordset
+
+Private mlngStockID As Long
+Private mlngPrevStockID As Long
+Private mlngProdID As Long
+Private mlngProdHandling As Long
+Private mlngFilterID As Long
+Private mintFilterType As Integer
+
+Private mintPeriodFromYear As Integer
+Private mintPeriodToYear As Integer
+
+Private mdtmPeriodFrom As Date
+Private mdtmPeriodTo As Date
+Private mstrAppVersion As String
+Private mstrLicenseeName As String
+
+Private mstrLicCompanyName As String
+Private mblnIsDemo As Boolean
+
+Private mdblRunningTotal As Double
+Private mlngCurrRowNum As Long
+
+Private mcolPackageTypeCodes As Collection
+Private mcolPackageTypeDescriptions As Collection
+Private mcolSubtotalPackagesQtyWgt As Collection
+Private lngDetailCounter As Long 'rachelle: added this variable for drawing lines 092705
+Private strDocNumForClosure As String 'rachelle: added this variable for Closure 092705
+Private blnToAddLine As Boolean 'rachelle : for closure 092705
+Private blnHasbeenShown As Boolean
+Private strDocNames As String
+Private blnJustAfterClosure As Boolean
+
+'********************************************************
+'CSCLP-344
+'********************************************************
+Private m_blnNoData As Boolean
+Private m_blnRecordEOF As Boolean
+Private m_strCurrDocNum As String
+'********************************************************
+
+Private Sub ActiveReport_ReportStart()
+    Dim intYearCtr As Integer
+    
+    Dim strSQL As String
+    Dim strSADBELPath As String
+    Dim strHistoryPath As String
+    
+    
+    On Error GoTo ErrHandler
+    
+    blnHasbeenShown = False
+    strDocNumForClosure = ""
+    blnToAddLine = False
+    blnJustAfterClosure = False
+        
+    '---> Loading translated captions
+    lblEntrepotType.Caption = UCase(Translate(2318))
+    lblPeriodFrom.Caption = UCase(Translate(2319))
+    lblPeriodTo.Caption = UCase(Translate(2332))
+    lblStockCardNum.Caption = UCase(Translate(2334))
+    
+    lblGoodsDescription.Caption = UCase(Translate(2357))
+    lblTARICCode.Caption = UCase(Translate(2364))
+    lblCountryOfImport.Caption = UCase(Translate(2362))
+    lblCountryOfOrigin.Caption = UCase(Translate(2363))
+    
+    
+    lblInbound.Caption = UCase(Translate(2340))
+    lblCol1.Caption = UCase(Translate(2341))
+    lblCol2.Caption = UCase(Translate(2342))
+    lblCol3.Caption = UCase(Translate(2343))
+    lblOutbound.Caption = UCase(Translate(2344))
+    lblCol4.Caption = UCase(Translate(2345))
+    lblPeriodicalDeclarations.Caption = UCase(Translate(2346))
+    lblCol5.Caption = UCase(Translate(2347))
+    lblCol6.Caption = UCase(Translate(2348))
+    lblCol7.Caption = UCase(Translate(2349))
+    lblCol8.Caption = UCase(Translate(2350))
+    lblCol9.Caption = UCase(Translate(2351))
+    lblCol10.Caption = UCase(Translate(2352))
+    lblCol11.Caption = UCase(Translate(2353))
+    lblCol12.Caption = UCase(Translate(2354))
+    lblCol13.Caption = UCase(Translate(2355))
+    lblCol14.Caption = UCase(Translate(2356))
+    
+    
+10  If mlngFilterID = 0 Then
+15      Me.Cancel
+    Else
+        ' Add Prod_Marks_Numbers!
+20      Select Case mintFilterType
+            Case FilterStockID
+25              strSQL = vbNullString
+                strSQL = strSQL & "SELECT "
+                strSQL = strSQL & "Auth_Name, "
+                strSQL = strSQL & "Auth_Address, "
+                strSQL = strSQL & "Auth_City, "
+                strSQL = strSQL & "Auth_PostalCode, "
+                strSQL = strSQL & "Auth_Country, "
+                strSQL = strSQL & "Entrepot_Type, "
+                strSQL = strSQL & "Entrepot_Num, "
+                strSQL = strSQL & "Entrepot_StartDate, "
+                strSQL = strSQL & "Prod_Num, "
+                strSQL = strSQL & "Prod_Desc, "
+                strSQL = strSQL & "Taric_Code, "
+                strSQL = strSQL & "Prod_Ctry_Origin, "
+                strSQL = strSQL & "Prod_Ctry_Export, "
+                strSQL = strSQL & "Prod_Handling, "
+                strSQL = strSQL & "Stock_Card_Num, "
+                strSQL = strSQL & "Stock_ID, "
+                strSQL = strSQL & "Products.Prod_ID AS Prod_ID "
+                strSQL = strSQL & "FROM "
+                strSQL = strSQL & "AuthorizedParties INNER JOIN ("
+                strSQL = strSQL & "Entrepots INNER JOIN ("
+                strSQL = strSQL & "Products INNER JOIN StockCards "
+                strSQL = strSQL & "ON Products.Prod_ID = StockCards.Prod_ID) "
+                strSQL = strSQL & "ON Entrepots.Entrepot_ID = Products.Entrepot_ID) "
+                strSQL = strSQL & "ON AuthorizedParties.Auth_ID = Entrepots.Auth_ID "
+                strSQL = strSQL & "WHERE Stock_ID = " & mlngFilterID & " "
+                strSQL = strSQL & "ORDER BY Val(Stock_Card_Num)"
+                
+30          Case FilterProductID
+35              strSQL = vbNullString
+                strSQL = strSQL & "SELECT "
+                strSQL = strSQL & "Auth_Name, "
+                strSQL = strSQL & "Auth_Address, "
+                strSQL = strSQL & "Auth_City, "
+                strSQL = strSQL & "Auth_PostalCode, "
+                strSQL = strSQL & "Auth_Country, "
+                strSQL = strSQL & "Entrepot_Type, "
+                strSQL = strSQL & "Entrepot_Num, "
+                strSQL = strSQL & "Entrepot_StartDate, "
+                strSQL = strSQL & "Prod_Num, "
+                strSQL = strSQL & "Prod_Desc, "
+                strSQL = strSQL & "Taric_Code, "
+                strSQL = strSQL & "Prod_Ctry_Origin, "
+                strSQL = strSQL & "Prod_Ctry_Export, "
+                strSQL = strSQL & "Prod_Handling, "
+                strSQL = strSQL & "Stock_Card_Num, "
+                strSQL = strSQL & "Stock_ID, "
+                strSQL = strSQL & "Products.Prod_ID AS Prod_ID "
+                strSQL = strSQL & "FROM "
+                strSQL = strSQL & "AuthorizedParties INNER JOIN ("
+                strSQL = strSQL & "Entrepots INNER JOIN ("
+                strSQL = strSQL & "Products INNER JOIN StockCards "
+                strSQL = strSQL & "ON Products.Prod_ID = StockCards.Prod_ID) "
+                strSQL = strSQL & "ON Entrepots.Entrepot_ID = Products.Entrepot_ID) "
+                strSQL = strSQL & "ON AuthorizedParties.Auth_ID = Entrepots.Auth_ID "
+                strSQL = strSQL & "WHERE "
+                strSQL = strSQL & "Products.Prod_ID = " & mlngFilterID & " "
+                strSQL = strSQL & "ORDER BY Val(Stock_Card_Num)"
+                
+40          Case FilterEntrepotID
+45              strSQL = vbNullString
+                strSQL = strSQL & "SELECT "
+                strSQL = strSQL & "Auth_Name, "
+                strSQL = strSQL & "Auth_Address, "
+                strSQL = strSQL & "Auth_City, "
+                strSQL = strSQL & "Auth_PostalCode, "
+                strSQL = strSQL & "Auth_Country, "
+                strSQL = strSQL & "Entrepot_Type, "
+                strSQL = strSQL & "Entrepot_Num, "
+                strSQL = strSQL & "Entrepot_StartDate, "
+                strSQL = strSQL & "Prod_Num, "
+                strSQL = strSQL & "Prod_Desc, "
+                strSQL = strSQL & "Taric_Code, "
+                strSQL = strSQL & "Prod_Ctry_Origin, "
+                strSQL = strSQL & "Prod_Ctry_Export, "
+                strSQL = strSQL & "Prod_Handling, "
+                strSQL = strSQL & "Stock_Card_Num, "
+                strSQL = strSQL & "Stock_ID, "
+                strSQL = strSQL & "Products.Prod_ID AS Prod_ID "
+                strSQL = strSQL & "FROM "
+                strSQL = strSQL & "AuthorizedParties INNER JOIN ("
+                strSQL = strSQL & "Entrepots INNER JOIN ("
+                strSQL = strSQL & "Products INNER JOIN StockCards "
+                strSQL = strSQL & "ON Products.Prod_ID = StockCards.Prod_ID) "
+                strSQL = strSQL & "ON Entrepots.Entrepot_ID = Products.Entrepot_ID) "
+                strSQL = strSQL & "ON AuthorizedParties.Auth_ID = Entrepots.Auth_ID "
+                strSQL = strSQL & "WHERE "
+                strSQL = strSQL & "Entrepots.Entrepot_ID = " & mlngFilterID & " "
+                strSQL = strSQL & "ORDER BY Val(Stock_Card_Num)"
+                
+        End Select
+        
+'50      Set mrstStockCardOff = New ADODB.Recordset
+'        mrstStockCardOff.CursorLocation = adUseClient
+55      ADORecordsetOpen strSQL, mconSADBEL, mrstStockCardOff, adOpenKeyset, adLockOptimistic
+'55      mrstStockCardOff.Open strSQL, mconSADBEL, adOpenForwardOnly, adLockReadOnly
+'        mrstStockCardOff.ActiveConnection = Nothing
+        
+60      If (mrstStockCardOff.EOF And mrstStockCardOff.BOF) Then
+            
+65          Select Case mintFilterType
+                Case FilterStockID
+                    ' Do nothing.
+70              Case FilterProductID
+75                  MsgBox "No stock cards defined for this product.", vbOKOnly + vbExclamation, "Summary Reports"
+80              Case FilterEntrepotID
+85                  MsgBox "No products and stock cards defined for this entrepot.", vbOKOnly + vbExclamation, "Summary Reports"
+            End Select
+            
+90          Me.Cancel
+            
+        Else
+            mrstStockCardOff.MoveFirst
+            
+95          mintPeriodFromYear = IIf(IsNull(mrstStockCardOff.Fields("Entrepot_StartDate").Value), 2004, Year(mrstStockCardOff.Fields("Entrepot_StartDate").Value))
+100         mintPeriodToYear = Year(mdtmPeriodTo)
+            
+            On Error Resume Next
+105         For intYearCtr = mintPeriodFromYear To mintPeriodToYear
+110             ExecuteNonQuery mconSADBEL, "DROP TABLE tblInboundsNoNull" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00")
+115             ExecuteNonQuery mconSADBEL, "DROP TABLE tblOutbounds" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00")
+'110             mconSADBEL.Execute "DROP TABLE tblInboundsNoNull" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00"), , adExecuteNoRecords
+'115             mconSADBEL.Execute "DROP TABLE tblOutbounds" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00"), , adExecuteNoRecords
+            Next intYearCtr
+
+120         ExecuteNonQuery mconSADBEL, "DROP TABLE tblInboundsNoNullAllYears" & "_" & Format(m_lngUserID, "00")
+'120         mconSADBEL.Execute "DROP TABLE tblInboundsNoNullAllYears" & "_" & Format(m_lngUserID, "00"), , adExecuteNoRecords
+            On Error GoTo ErrHandler
+            
+125         With Me
+130             .Zoom = -1
+                If .Printer.DeviceName <> "" Then
+135                 .Printer.PaperSize = vbPRPSA4
+140                 .Printer.Orientation = ddOLandscape
+                Else
+                    MsgBox "Problems occurred while connecting to printer. The report might be shown incorrectly.", vbInformation + vbOKOnly, "ClearingPoint"
+                End If
+            End With
+            
+            If LicIsDemo Then
+155             lblVersionNum.Caption = "ClearingPoint v" & mstrAppVersion & " Demo version"
+            Else
+                lblVersionNum.Caption = "ClearingPoint v" & mstrAppVersion & IIf(Len(LicCompanyName) > 0, " Licensed to: " & LicCompanyName, "")
+            End If
+            
+            lblPrintDate.Caption = UCase(Translate(2322)) & " " & Now()
+            
+        End If
+    End If
+    
+    Exit Sub
+    
+ErrHandler:
+    
+    MsgBox Err.Description, vbOKOnly + vbExclamation, Err.Source & " (" & Err.Number & ", " & Erl & ")"
+End Sub
+
+Private Sub ActiveReport_FetchData(EOF As Boolean)
+    If mrstStockCardOff.EOF Then
+        EOF = True
+        m_blnRecordEOF = True   'CSCLP-344
+    Else
+        m_blnRecordEOF = False  'CSCLP-344
+        EOF = False
+    End If
+End Sub
+
+Private Sub PageHeader_Format()
+    Dim rstCountryNames As ADODB.Recordset
+    
+    Dim strSQL As String
+    Dim strSADBELPath As String
+    Dim strHistoryPath As String
+    
+    Dim intYearCtr As Integer
+    
+    Dim blnNextStockCard As Boolean
+    Dim blnTableCreated As Boolean
+    
+    Dim lngErrNumber As Long
+    
+    Static blnInboundsTablesCreated As Boolean
+    
+'    On Error GoTo ErrHandler
+    
+10  If mrstMovements Is Nothing Then
+15      blnNextStockCard = True
+    Else
+20      If mrstMovements.EOF Then
+25          blnNextStockCard = True
+        Else
+30          blnNextStockCard = False
+        End If
+    End If
+    
+    
+    'strSADBELPath = mconSADBEL.Properties("Data Source").Value
+    strSADBELPath = NoBackSlash(g_objDataSourceProperties.InitialCatalogPath)
+    
+35  If blnNextStockCard Then
+40      With mrstStockCardOff
+            Do
+45              If Not .EOF Then
+                    
+50                  mlngStockID = .Fields("Stock_ID").Value
+55                  mlngProdID = .Fields("Prod_ID").Value
+60                  mlngProdHandling = .Fields("Prod_Handling").Value
+                    
+65                  If (mlngStockID <> mlngPrevStockID) Then
+                        
+70                      ADORecordsetClose mrstMovements
+
+                        On Error Resume Next
+90                      ExecuteNonQuery mconSADBEL, "DROP TABLE tblInboundTotal" & "_" & Format(m_lngUserID, "00")
+95                      ExecuteNonQuery mconSADBEL, "DROP TABLE tblOutboundTotal" & "_" & Format(m_lngUserID, "00")
+100                     ExecuteNonQuery mconSADBEL, "DROP TABLE tblPrevMovements" & "_" & Format(m_lngUserID, "00")
+                        On Error GoTo 0
+                        
+                        On Error GoTo ErrHandler
+                        
+110                     blnTableCreated = False
+                                
+115                     For intYearCtr = mintPeriodFromYear To mintPeriodToYear
+120                         strHistoryPath = NoBackSlash(strSADBELPath) & "\" & "mdb_history" & Right(intYearCtr, 2) & ".mdb"
+'120                         strHistoryPath = Mid(strSADBELPath, 1, InStrRev(strSADBELPath, "\" & Dir(strSADBELPath), , vbTextCompare)) & "mdb_history" & Right(intYearCtr, 2) & ".mdb"
+                            
+                            Dim blnHistoryDBExists As Boolean
+                            
+                            Select Case g_objDataSourceProperties.DatabaseType
+                                Case DatabaseType_ACCESS97, DatabaseType_ACCESS2003
+                                    blnHistoryDBExists = (Len(Dir(strHistoryPath)) > 0)
+                                Case DatabaseType_SQLSERVER
+                                    ' TO DO FOR CP.NET
+                                Case Else
+                                    Debug.Assert False
+                            End Select
+
+125                         If blnHistoryDBExists Then
+'130                             strHistoryPath = "[" & strHistoryPath & "]"
+                                
+135                             Select Case mintFilterType
+                                    Case FilterStockID
+140                                     If Not blnTableCreated Then
+145                                         strSQL = vbNullString
+                                            strSQL = strSQL & "SELECT "
+                                            strSQL = strSQL & "HistoryInbounds.InDoc_ID AS Doc_ID, "
+                                            strSQL = strSQL & "SUM(" & Choose(mlngProdHandling + 1, "In_Orig_Packages_Qty", "In_Orig_Gross_Weight", "In_Orig_Net_Weight") & ") AS Subtotal_Packages_Qty_Wgt, "
+                                            strSQL = strSQL & Choose(mlngProdHandling + 1, "In_Orig_Packages_Type", "'KG'", "'KG'") & " AS Packages_Type "
+                                            strSQL = strSQL & "INTO tblInboundTotal" & "_" & Format(m_lngUserID, "00") & " "
+                                        Else
+150                                         strSQL = vbNullString
+                                            strSQL = strSQL & "INSERT INTO "
+                                            strSQL = strSQL & "tblInboundTotal" & "_" & Format(m_lngUserID, "00") & " "
+                                            strSQL = strSQL & "SELECT "
+                                            strSQL = strSQL & "HistoryInbounds.InDoc_ID AS Doc_ID, "
+                                            strSQL = strSQL & "SUM(" & Choose(mlngProdHandling + 1, "In_Orig_Packages_Qty", "In_Orig_Gross_Weight", "In_Orig_Net_Weight") & ") AS Subtotal_Packages_Qty_Wgt, "
+                                            strSQL = strSQL & Choose(mlngProdHandling + 1, "In_Orig_Packages_Type", "'KG'", "'KG'") & " AS Packages_Type "
+                                        End If
+                                        
+                                        
+                                        'Added a where clause to exclude Test Docs. -rachelle 092205
+155                                     strSQL = strSQL & "FROM "
+                                        strSQL = strSQL & "HistoryInbounds INNER JOIN HistoryInboundDocs "
+                                        strSQL = strSQL & "ON HistoryInboundDocs.InDoc_ID = HistoryInbounds.InDoc_ID "
+                                        strSQL = strSQL & "WHERE "
+                                        strSQL = strSQL & "Stock_ID = " & mlngFilterID & " "
+                                        strSQL = strSQL & "AND "
+                                        strSQL = strSQL & "DateValue(InDoc_Date) < DateValue('" & mdtmPeriodFrom & "') "
+                                        strSQL = strSQL & "AND "
+                                        strSQL = strSQL & "("
+                                        strSQL = strSQL & "(" & Choose(mlngProdHandling + 1, "In_Orig_Packages_Qty", "In_Orig_Gross_Weight", "In_Orig_Net_Weight") & " >= 0 AND In_Avl_Qty_Wgt >= 0) "
+                                        strSQL = strSQL & "OR "
+                                        strSQL = strSQL & "(" & Choose(mlngProdHandling + 1, "In_Orig_Packages_Qty", "In_Orig_Gross_Weight", "In_Orig_Net_Weight") & " < 0 AND In_Avl_Qty_Wgt < 0) "
+                                        strSQL = strSQL & "OR "
+                                        strSQL = strSQL & "(" & Choose(mlngProdHandling + 1, "In_Orig_Packages_Qty", "In_Orig_Gross_Weight", "In_Orig_Net_Weight") & " >= 0 AND In_Avl_Qty_Wgt < 0 AND In_TotalOut_Qty_Wgt > 0)"
+                                        strSQL = strSQL & ") "
+                                        strSQL = strSQL & "AND "
+                                        strSQL = strSQL & "("
+                                        strSQL = strSQL & "UCase(Right(HistoryInbounds.In_Code,8)) <> '<<TEST>>' "
+                                        strSQL = strSQL & "OR "
+                                        strSQL = strSQL & "IsNull(HistoryInbounds.In_Code) "
+                                        strSQL = strSQL & "OR "
+                                        strSQL = strSQL & "UCase(Right(HistoryInbounds.In_Code,11)) = '<<CLOSURE>>'"
+                                        strSQL = strSQL & ") "
+                                        strSQL = strSQL & "GROUP BY "
+                                        strSQL = strSQL & "HistoryInbounds.InDoc_ID" & IIf(mlngProdHandling = 0, ", In_Orig_Packages_Type", "")
+                                        
+                                        
+160                                 Case FilterProductID
+165                                     If Not blnTableCreated Then
+170                                         strSQL = vbNullString
+                                            strSQL = strSQL & "SELECT "
+                                            strSQL = strSQL & "HistoryInbounds.InDoc_ID AS Doc_ID, "
+                                            strSQL = strSQL & "SUM(" & Choose(mlngProdHandling + 1, "In_Orig_Packages_Qty", "In_Orig_Gross_Weight", "In_Orig_Net_Weight") & ") AS Subtotal_Packages_Qty_Wgt, "
+                                            strSQL = strSQL & Choose(mlngProdHandling + 1, "In_Orig_Packages_Type", "'KG'", "'KG'") & " AS Packages_Type "
+                                            strSQL = strSQL & "INTO tblInboundTotal" & "_" & Format(m_lngUserID, "00") & " "
+                                        Else
+175                                         strSQL = "INSERT INTO "
+                                            strSQL = strSQL & "tblInboundTotal" & "_" & Format(m_lngUserID, "00") & " "
+                                            strSQL = strSQL & "SELECT "
+                                            strSQL = strSQL & "HistoryInbounds.InDoc_ID AS Doc_ID, "
+                                            strSQL = strSQL & "SUM(" & Choose(mlngProdHandling + 1, "In_Orig_Packages_Qty", "In_Orig_Gross_Weight", "In_Orig_Net_Weight") & ") AS Subtotal_Packages_Qty_Wgt, "
+                                            strSQL = strSQL & Choose(mlngProdHandling + 1, "In_Orig_Packages_Type", "'KG'", "'KG'") & " AS Packages_Type "
+                                        End If
+                                        
+                                        'Added a where clause to exclude Test Docs - rachelle 092205
+180                                     strSQL = strSQL & "FROM "
+                                        strSQL = strSQL & "HistoryInboundDocs INNER JOIN ("
+                                        strSQL = strSQL & "HistoryInbounds INNER JOIN StockCards "
+                                        strSQL = strSQL & "ON HistoryInbounds.Stock_ID = StockCards.Stock_ID) "
+                                        strSQL = strSQL & "ON HistoryInboundDocs.InDoc_ID = HistoryInbounds.InDoc_ID "
+                                        strSQL = strSQL & "WHERE "
+                                        strSQL = strSQL & "Prod_ID = " & mlngFilterID & " "
+                                        strSQL = strSQL & "AND "
+                                        strSQL = strSQL & "HistoryInbounds.Stock_ID = " & mlngStockID & " "
+                                        strSQL = strSQL & "AND "
+                                        strSQL = strSQL & "DateValue(InDoc_Date) < DateValue('" & mdtmPeriodFrom & "') "
+                                        strSQL = strSQL & "AND "
+                                        strSQL = strSQL & "("
+                                        strSQL = strSQL & "(" & Choose(mlngProdHandling + 1, "In_Orig_Packages_Qty", "In_Orig_Gross_Weight", "In_Orig_Net_Weight") & " >= 0 AND In_Avl_Qty_Wgt >= 0) "
+                                        strSQL = strSQL & "OR "
+                                        strSQL = strSQL & "(" & Choose(mlngProdHandling + 1, "In_Orig_Packages_Qty", "In_Orig_Gross_Weight", "In_Orig_Net_Weight") & " < 0 AND In_Avl_Qty_Wgt < 0) "
+                                        strSQL = strSQL & "OR "
+                                        strSQL = strSQL & "(" & Choose(mlngProdHandling + 1, "In_Orig_Packages_Qty", "In_Orig_Gross_Weight", "In_Orig_Net_Weight") & " >= 0 AND In_Avl_Qty_Wgt < 0 AND In_TotalOut_Qty_Wgt > 0)"
+                                        strSQL = strSQL & ") "
+                                        strSQL = strSQL & "AND "
+                                        strSQL = strSQL & "("
+                                        strSQL = strSQL & "UCase(Right(HistoryInbounds.In_Code, 8)) <> '<<TEST>>' "
+                                        strSQL = strSQL & "OR "
+                                        strSQL = strSQL & "IsNull(HistoryInbounds.In_Code) "
+                                        strSQL = strSQL & "OR "
+                                        strSQL = strSQL & "UCase(Right(HistoryInbounds.In_Code, 11)) = '<<CLOSURE>>'"
+                                        strSQL = strSQL & ") "
+                                        strSQL = strSQL & "GROUP BY "
+                                        strSQL = strSQL & "HistoryInbounds.InDoc_ID" & IIf(mlngProdHandling = 0, ", In_Orig_Packages_Type", "")
+                                        
+185                                 Case FilterEntrepotID
+190                                     If Not blnTableCreated Then
+195                                         strSQL = vbNullString
+                                            strSQL = strSQL & "SELECT "
+                                            strSQL = strSQL & "HistoryInbounds.InDoc_ID AS Doc_ID, "
+                                            strSQL = strSQL & "SUM(" & Choose(mlngProdHandling + 1, "In_Orig_Packages_Qty", "In_Orig_Gross_Weight", "In_Orig_Net_Weight") & ") AS Subtotal_Packages_Qty_Wgt, "
+                                            strSQL = strSQL & Choose(mlngProdHandling + 1, "In_Orig_Packages_Type", "'KG'", "'KG'") & " AS Packages_Type "
+                                            strSQL = strSQL & "INTO tblInboundTotal" & "_" & Format(m_lngUserID, "00") & " "
+                                        Else
+200                                         strSQL = vbNullString
+                                            strSQL = strSQL & "INSERT INTO "
+                                            strSQL = strSQL & "tblInboundTotal" & "_" & Format(m_lngUserID, "00") & " "
+                                            strSQL = strSQL & "SELECT "
+                                            strSQL = strSQL & "HistoryInbounds.InDoc_ID AS Doc_ID, "
+                                            strSQL = strSQL & "SUM(" & Choose(mlngProdHandling + 1, "In_Orig_Packages_Qty", "In_Orig_Gross_Weight", "In_Orig_Net_Weight") & ") AS Subtotal_Packages_Qty_Wgt, "
+                                            strSQL = strSQL & Choose(mlngProdHandling + 1, "In_Orig_Packages_Type", "'KG'", "'KG'") & " AS Packages_Type "
+                                        End If
+                                        
+                                        'Added a where clause to exclude Test Docs - rachelle 092205
+205                                     strSQL = strSQL & "FROM "
+                                        strSQL = strSQL & "HistoryInboundDocs INNER JOIN ("
+                                        strSQL = strSQL & "HistoryInbounds INNER JOIN ("
+                                        strSQL = strSQL & "StockCards INNER JOIN Products "
+                                        strSQL = strSQL & "ON StockCards.Prod_ID = Products.Prod_ID) "
+                                        strSQL = strSQL & "ON HistoryInbounds.Stock_ID = StockCards.Stock_ID) "
+                                        strSQL = strSQL & "ON HistoryInboundDocs.InDoc_ID = HistoryInbounds.InDoc_ID "
+                                        strSQL = strSQL & "WHERE "
+                                        strSQL = strSQL & "Entrepot_ID = " & mlngFilterID & " "
+                                        strSQL = strSQL & "AND "
+                                        strSQL = strSQL & "StockCards.Prod_ID = " & mlngProdID & " "
+                                        strSQL = strSQL & "AND "
+                                        strSQL = strSQL & "HistoryInbounds.Stock_ID = " & mlngStockID & " "
+                                        strSQL = strSQL & "AND "
+                                        strSQL = strSQL & "DateValue(InDoc_Date) < DateValue('" & mdtmPeriodFrom & "') "
+                                        strSQL = strSQL & "AND "
+                                        strSQL = strSQL & "("
+                                        strSQL = strSQL & "(" & Choose(mlngProdHandling + 1, "In_Orig_Packages_Qty", "In_Orig_Gross_Weight", "In_Orig_Net_Weight") & " >= 0 AND In_Avl_Qty_Wgt >= 0) "
+                                        strSQL = strSQL & "OR "
+                                        strSQL = strSQL & "(" & Choose(mlngProdHandling + 1, "In_Orig_Packages_Qty", "In_Orig_Gross_Weight", "In_Orig_Net_Weight") & " < 0 AND In_Avl_Qty_Wgt < 0) "
+                                        strSQL = strSQL & "OR "
+                                        strSQL = strSQL & "(" & Choose(mlngProdHandling + 1, "In_Orig_Packages_Qty", "In_Orig_Gross_Weight", "In_Orig_Net_Weight") & " >= 0 AND In_Avl_Qty_Wgt < 0 AND In_TotalOut_Qty_Wgt > 0)) "
+                                        strSQL = strSQL & "AND "
+                                        strSQL = strSQL & "("
+                                        strSQL = strSQL & "UCase(Right(HistoryInbounds.In_Code, 8)) <> '<<TEST>>' "
+                                        strSQL = strSQL & "OR "
+                                        strSQL = strSQL & "IsNull(HistoryInbounds.In_Code) "
+                                        strSQL = strSQL & "OR "
+                                        strSQL = strSQL & "UCase(Right(HistoryInbounds.In_Code, 11)) = '<<CLOSURE>>'"
+                                        strSQL = strSQL & ") "
+                                        strSQL = strSQL & "GROUP BY "
+                                        strSQL = strSQL & "HistoryInbounds.InDoc_ID" & IIf(mlngProdHandling = 0, ", In_Orig_Packages_Type", "")
+                                End Select
+                                
+                                strSQL = Replace(strSQL, "HistoryInbounds", "HistoryInbounds" & Right(intYearCtr, 2))
+                                strSQL = Replace(strSQL, "HistoryInboundDocs", "HistoryInboundDocs" & Right(intYearCtr, 2))
+210                             ExecuteNonQuery mconSADBEL, strSQL
+'210                             mconSADBEL.Execute strSQL
+                                
+                                
+                                
+215                             If Not blnInboundsTablesCreated Then
+                                    ' Create temporary Inbounds table with Null values of In_Source_In_ID converted to zero
+                                    ' Prepend space (ASCII Code 32) to 'DIA' so that 'DIA' job numbers would come before numeric job numbers in the sorted recordset
+                                    ' Prepend non-trimmable space (Ascii Code 160) to job numbers so that blank job numbers would come after 'DIA' job numbers in the sorted recordset
+                                    'Added a 'where' clause to exclude Test Docs - rachelle 092205
+220                                     strSQL = vbNullString
+                                        strSQL = strSQL & "SELECT "
+                                        strSQL = strSQL & "In_ID, "
+                                        strSQL = strSQL & "In_Batch_Num, "
+                                        strSQL = strSQL & "IIf(In_Job_Num = 'DIA', ' ' & In_Job_Num, Chr(160) & In_Job_Num) AS In_Job_Num, "
+                                        strSQL = strSQL & "Choose(Prod_Handling + 1, In_Orig_Packages_Qty, In_Orig_Gross_Weight, In_Orig_Net_Weight) AS In_Packages_Qty_Wgt, "
+                                        strSQL = strSQL & "In_Avl_Qty_Wgt, "
+                                        strSQL = strSQL & "In_TotalOut_Qty_Wgt, "
+                                        strSQL = strSQL & "In_Orig_Packages_Type, "
+                                        strSQL = strSQL & "HistoryInbounds.Stock_ID, "
+                                        strSQL = strSQL & "InDoc_ID, "
+                                        strSQL = strSQL & "IIf(In_Job_Num = 'DIA', -1, IIf(IsNull(In_Source_In_ID), 0, In_Source_In_ID)) AS InNoNull_Source_In_ID, "
+                                        strSQL = strSQL & "IIf(IsNull(In_Code),'',In_Code) AS InNoNull_Code "
+                                        strSQL = strSQL & "INTO "
+                                        strSQL = strSQL & "tblInboundsNoNull" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & " "
+                                        strSQL = strSQL & "FROM "
+                                        strSQL = strSQL & "HistoryInbounds INNER JOIN ("
+                                        strSQL = strSQL & "StockCards INNER JOIN Products "
+                                        strSQL = strSQL & "ON StockCards.Prod_ID = Products.Prod_ID) "
+                                        strSQL = strSQL & "ON StockCards.Stock_ID = HistoryInbounds.Stock_ID "
+                                        strSQL = strSQL & "WHERE "
+                                        strSQL = strSQL & "UCase(Right(In_Code, 8)) <> '<<TEST>>' "
+                                        strSQL = strSQL & "OR "
+                                        strSQL = strSQL & "IsNull(In_Code) "
+                                        strSQL = strSQL & "OR "
+                                        strSQL = strSQL & "UCase(Right(In_Code,11)) = '<<CLOSURE>>'"
+                                    
+                                    strSQL = Replace(strSQL, "HistoryInbounds", "HistoryInbounds" & Right(intYearCtr, 2))
+225                                 ExecuteNonQuery mconSADBEL, strSQL
+'225                                 mconSADBEL.Execute strSQL
+                                    
+                                    
+                                    ' Create temporary Outbounds table with additional Out_Source_In_ID field (-1 values denote DIA records, 0 values denote regular records)
+                                    ' Prepend space (ASCII Code 32) to 'DIA' so that 'DIA' job numbers would come before numeric job numbers in the sorted recordset
+                                    ' Prepend non-trimmable space (Ascii Code 160) to job numbers so that blank job numbers would come after 'DIA' job numbers in the sorted recordset
+                                    ' Added a code that adds -2 as source id to determine whether the record was cancelled using the Manual Outbound form -rachelle 09/21/05
+                                    ' Added a 'Where' clause to exclude Test Docs -rachelle 092205
+                                        strSQL = vbNullString
+                                        strSQL = strSQL & "SELECT "
+                                        strSQL = strSQL & "Out_ID, "
+                                        strSQL = strSQL & "In_ID, "
+                                        strSQL = strSQL & "Out_Batch_Num, "
+                                        strSQL = strSQL & "IIf(Out_Job_Num = 'DIA', ' ' & Out_Job_Num, Chr(160) & Out_Job_Num) AS Out_Job_Num, "
+                                        strSQL = strSQL & "Out_Packages_Qty_Wgt, "
+                                        strSQL = strSQL & "OutDoc_ID, "
+                                        strSQL = strSQL & "IIf(Out_Job_Num = 'DIA', -1, IIF(OUT_CODE = 'ICorrection' OR OUT_CODE = 'OCorrection',-2, 0)) AS Out_Source_In_ID, "
+                                        strSQL = strSQL & "IIf(IsNull(Out_Code),'',Out_Code) AS InNoNull_Code "
+                                        strSQL = strSQL & "INTO "
+                                        strSQL = strSQL & "tblOutbounds" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & " "
+                                        strSQL = strSQL & "FROM "
+                                        strSQL = strSQL & "HistoryOutbounds "
+                                        strSQL = strSQL & "WHERE "
+                                        strSQL = strSQL & "UCase(Right(HistoryOutbounds.Out_Code, 8)) <> '<<TEST>>' "
+                                        strSQL = strSQL & "OR "
+                                        strSQL = strSQL & "IsNull(HistoryOutbounds.Out_Code) "
+                                        strSQL = strSQL & "OR "
+                                        strSQL = strSQL & "UCase(Right(HistoryOutbounds.Out_Code, 11)) = '<<CLOSURE>>'"
+                                    
+                                    strSQL = Replace(strSQL, "HistoryOutbounds", "HistoryOutbounds" & Right(intYearCtr, 2))
+                                    
+235                                 ExecuteNonQuery mconSADBEL, strSQL
+'235                                 mconSADBEL.Execute strSQL
+                                    
+                                    
+                                    ' Create temporary all-year aggregate Inbounds table with Null values of In_Source_In_ID converted to zero
+                                    ' Prepend space (ASCII Code 32) to 'DIA' so that 'DIA' job numbers would come before numeric job numbers in the sorted recordset
+                                    ' Prepend non-trimmable space (Ascii Code 160) to job numbers so that blank job numbers would come after 'DIA' job numbers in the sorted recordset
+                                    ' Added a 'Where' clause to exclude Test Docs -rachelle 092205
+240                                 If Not blnTableCreated Then
+                                        
+245                                     strSQL = "SELECT In_ID, "
+                                        strSQL = strSQL & "In_Batch_Num, "
+                                        strSQL = strSQL & "IIf(In_Job_Num = 'DIA', ' ' & In_Job_Num, Chr(160) & In_Job_Num) AS In_Job_Num, "
+                                        strSQL = strSQL & "Choose(Prod_Handling + 1, In_Orig_Packages_Qty, In_Orig_Gross_Weight, In_Orig_Net_Weight) AS In_Packages_Qty_Wgt, "
+                                        strSQL = strSQL & "In_Avl_Qty_Wgt, "
+                                        strSQL = strSQL & "In_TotalOut_Qty_Wgt, "
+                                        strSQL = strSQL & "In_Orig_Packages_Type, "
+                                        strSQL = strSQL & "HistoryInbounds.Stock_ID, "
+                                        strSQL = strSQL & "InDoc_ID, "
+                                        strSQL = strSQL & "IIf(In_Job_Num = 'DIA', -1, IIf(IsNull(In_Source_In_ID), 0, In_Source_In_ID)) AS InNoNull_Source_In_ID, "
+                                        strSQL = strSQL & "IIf(IsNull(In_Code),'',In_Code) AS InNoNull_Code "
+                                        strSQL = strSQL & "INTO "
+                                        strSQL = strSQL & "tblInboundsNoNullAllYears" & "_" & Format(m_lngUserID, "00") & " "
+                                        strSQL = strSQL & "FROM "
+                                        strSQL = strSQL & "HistoryInbounds INNER JOIN ("
+                                        strSQL = strSQL & "StockCards INNER JOIN Products "
+                                        strSQL = strSQL & "ON StockCards.Prod_ID = Products.Prod_ID) "
+                                        strSQL = strSQL & "ON HistoryInbounds.Stock_ID = StockCards.Stock_ID "
+                                        strSQL = strSQL & "WHERE "
+                                        strSQL = strSQL & "UCase(Right(In_Code, 8)) <> '<<TEST>>' "
+                                        strSQL = strSQL & "OR "
+                                        strSQL = strSQL & "IsNull(In_Code) "
+                                        strSQL = strSQL & "OR "
+                                        strSQL = strSQL & "UCase(Right(In_Code,11)) = '<<CLOSURE>>'"
+                                        
+                                    Else
+                                        
+                                        strSQL = vbNullString
+                                        strSQL = strSQL & "INSERT INTO "
+                                        strSQL = strSQL & "tblInboundsNoNullAllYears" & "_" & Format(m_lngUserID, "00") & " "
+                                        strSQL = strSQL & "SELECT "
+                                        strSQL = strSQL & "In_ID, "
+                                        strSQL = strSQL & "In_Batch_Num, "
+                                        strSQL = strSQL & "IIf(In_Job_Num = 'DIA', ' ' & In_Job_Num, Chr(160) & In_Job_Num) AS In_Job_Num, "
+                                        strSQL = strSQL & "Choose(Prod_Handling + 1, In_Orig_Packages_Qty, In_Orig_Gross_Weight, In_Orig_Net_Weight) AS In_Packages_Qty_Wgt, "
+                                        strSQL = strSQL & "In_Avl_Qty_Wgt, "
+                                        strSQL = strSQL & "In_TotalOut_Qty_Wgt, "
+                                        strSQL = strSQL & "In_Orig_Packages_Type, "
+                                        strSQL = strSQL & "HistoryInbounds.Stock_ID, "
+                                        strSQL = strSQL & "InDoc_ID, "
+                                        strSQL = strSQL & "IIf(In_Job_Num = 'DIA', -1, IIf(IsNull(In_Source_In_ID), 0, In_Source_In_ID)) AS InNoNull_Source_In_ID, "
+                                        strSQL = strSQL & "IIf(IsNull(In_Code),'',In_Code) AS InNoNull_Code "
+                                        strSQL = strSQL & "FROM "
+                                        strSQL = strSQL & "HistoryInbounds INNER JOIN ("
+                                        strSQL = strSQL & "StockCards INNER JOIN Products "
+                                        strSQL = strSQL & "ON StockCards.Prod_ID = Products.Prod_ID) "
+                                        strSQL = strSQL & "ON HistoryInbounds.Stock_ID = StockCards.Stock_ID "
+                                        strSQL = strSQL & "WHERE "
+                                        strSQL = strSQL & "UCase(Right(In_Code,8)) <> '<<TEST>>' "
+                                        strSQL = strSQL & "OR "
+                                        strSQL = strSQL & "IsNull(In_Code) "
+                                        strSQL = strSQL & "OR "
+                                        strSQL = strSQL & "UCase(Right(In_Code,11)) = '<<CLOSURE>>'"
+                                        
+                                    End If
+                                    
+                                    strSQL = Replace(strSQL, "HistoryInbounds", "HistoryInbounds" & Right(intYearCtr, 2))
+255                                 ExecuteNonQuery mconSADBEL, strSQL
+'255                                 mconSADBEL.Execute strSQL
+                                End If
+                                
+                                
+260                             blnTableCreated = True    ' Tables have been created after one pass of loop
+                                
+                                
+265                             Select Case mintFilterType
+                                    Case FilterStockID
+270                                     strSQL = vbNullString
+                                        strSQL = strSQL & "INSERT INTO "
+                                        strSQL = strSQL & "tblInboundTotal" & "_" & Format(m_lngUserID, "00") & " "
+                                        strSQL = strSQL & "SELECT "
+                                        strSQL = strSQL & "HistoryOutbounds.OutDoc_ID AS Doc_ID, "
+                                        strSQL = strSQL & "SUM(-Out_Packages_Qty_Wgt) AS Subtotal_Packages_Qty_Wgt, "
+                                        strSQL = strSQL & "In_Orig_Packages_Type AS Packages_Type "
+                                        strSQL = strSQL & "FROM "
+                                        strSQL = strSQL & "HistoryOutboundDocs INNER JOIN ("
+                                        strSQL = strSQL & "HistoryOutbounds INNER JOIN tblInboundsNoNullAllYears" & "_" & Format(m_lngUserID, "00") & " "
+                                        strSQL = strSQL & "ON HistoryOutbounds.In_ID = tblInboundsNoNullAllYears" & "_" & Format(m_lngUserID, "00") & ".In_ID) "
+                                        strSQL = strSQL & "ON HistoryOutboundDocs.OutDoc_ID = HistoryOutbounds.OutDoc_ID "
+                                        strSQL = strSQL & "WHERE "
+                                        strSQL = strSQL & "Stock_ID = " & mlngFilterID & " "
+                                        strSQL = strSQL & "AND "
+                                        strSQL = strSQL & "DateValue(OutDoc_Date) < DateValue('" & mdtmPeriodFrom & "')" & " "
+                                        strSQL = strSQL & "AND "
+                                        strSQL = strSQL & "("
+                                        strSQL = strSQL & "UCase(Right(HistoryOutbounds.Out_Code, 8)) <> '<<TEST>>' "
+                                        strSQL = strSQL & "OR "
+                                        strSQL = strSQL & "IsNull(HistoryOutbounds.Out_Code) "
+                                        strSQL = strSQL & "OR "
+                                        strSQL = strSQL & "UCase(Right(HistoryOutbounds.Out_Code, 11)) = '<<CLOSURE>>'"
+                                        strSQL = strSQL & ") "
+                                        strSQL = strSQL & "GROUP BY "
+                                        strSQL = strSQL & "HistoryOutbounds.OutDoc_ID, "
+                                        strSQL = strSQL & "In_Orig_Packages_Type"
+                                        
+275                                 Case FilterProductID
+280                                     strSQL = vbNullString
+                                        strSQL = strSQL & "INSERT INTO "
+                                        strSQL = strSQL & "tblInboundTotal" & "_" & Format(m_lngUserID, "00") & " "
+                                        strSQL = strSQL & "SELECT "
+                                        strSQL = strSQL & "HistoryOutbounds.OutDoc_ID AS Doc_ID, "
+                                        strSQL = strSQL & "SUM(-Out_Packages_Qty_Wgt) AS Subtotal_Packages_Qty_Wgt, "
+                                        strSQL = strSQL & Choose(mlngProdHandling + 1, "In_Orig_Packages_Type", "'KG'", "'KG'") & " AS Packages_Type "
+                                        strSQL = strSQL & "FROM "
+                                        strSQL = strSQL & "HistoryOutboundDocs INNER JOIN ("
+                                        strSQL = strSQL & "HistoryOutbounds INNER JOIN ("
+                                        strSQL = strSQL & "tblInboundsNoNullAllYears" & "_" & Format(m_lngUserID, "00") & " INNER JOIN StockCards "
+                                        strSQL = strSQL & "ON tblInboundsNoNullAllYears" & "_" & Format(m_lngUserID, "00") & ".Stock_ID = StockCards.Stock_ID) "
+                                        strSQL = strSQL & "ON HistoryOutbounds.In_ID = tblInboundsNoNullAllYears" & "_" & Format(m_lngUserID, "00") & ".In_ID) "
+                                        strSQL = strSQL & "ON HistoryOutboundDocs.OutDoc_ID = HistoryOutbounds.OutDoc_ID "
+                                        strSQL = strSQL & "WHERE "
+                                        strSQL = strSQL & "Prod_ID = " & mlngFilterID & " "
+                                        strSQL = strSQL & "AND "
+                                        strSQL = strSQL & "tblInboundsNoNullAllYears" & "_" & Format(m_lngUserID, "00") & ".Stock_ID = " & mlngStockID & " "
+                                        strSQL = strSQL & "AND "
+                                        strSQL = strSQL & "DateValue(OutDoc_Date) < DateValue('" & mdtmPeriodFrom & "') "
+                                        strSQL = strSQL & "AND "
+                                        strSQL = strSQL & "("
+                                        strSQL = strSQL & "UCase(Right(HistoryOutbounds.Out_Code, 8)) <> '<<TEST>>' "
+                                        strSQL = strSQL & "OR "
+                                        strSQL = strSQL & "IsNull(HistoryOutbounds.Out_Code) "
+                                        strSQL = strSQL & "OR "
+                                        strSQL = strSQL & "UCase(Right(HistoryOutbounds.Out_Code, 11)) = '<<CLOSURE>>'"
+                                        strSQL = strSQL & ") "
+                                        strSQL = strSQL & "GROUP BY "
+                                        strSQL = strSQL & "HistoryOutbounds.OutDoc_ID" & IIf(mlngProdHandling = 0, ", In_Orig_Packages_Type", "")
+                                        
+285                                 Case FilterEntrepotID
+290                                     strSQL = vbNullString
+                                        strSQL = strSQL & "INSERT INTO "
+                                        strSQL = strSQL & "tblInboundTotal" & "_" & Format(m_lngUserID, "00") & " "
+                                        strSQL = strSQL & "SELECT "
+                                        strSQL = strSQL & "HistoryOutbounds.OutDoc_ID AS Doc_ID, "
+                                        strSQL = strSQL & "SUM(-Out_Packages_Qty_Wgt) AS Subtotal_Packages_Qty_Wgt, "
+                                        strSQL = strSQL & Choose(mlngProdHandling + 1, "In_Orig_Packages_Type", "'KG'", "'KG'") & " AS Packages_Type "
+                                        strSQL = strSQL & "FROM "
+                                        strSQL = strSQL & "HistoryOutboundDocs INNER JOIN ("
+                                        strSQL = strSQL & "HistoryOutbounds INNER JOIN ("
+                                        strSQL = strSQL & "tblInboundsNoNullAllYears" & "_" & Format(m_lngUserID, "00") & " INNER JOIN ("
+                                        strSQL = strSQL & "StockCards INNER JOIN Products "
+                                        strSQL = strSQL & "ON StockCards.Prod_ID = Products.Prod_ID) "
+                                        strSQL = strSQL & "ON tblInboundsNoNullAllYears" & "_" & Format(m_lngUserID, "00") & ".Stock_ID = StockCards.Stock_ID) "
+                                        strSQL = strSQL & "ON HistoryOutbounds.In_ID = tblInboundsNoNullAllYears" & "_" & Format(m_lngUserID, "00") & ".In_ID) "
+                                        strSQL = strSQL & "ON HistoryOutboundDocs.OutDoc_ID = HistoryOutbounds.OutDoc_ID "
+                                        strSQL = strSQL & "WHERE "
+                                        strSQL = strSQL & "Entrepot_ID = " & mlngFilterID & " "
+                                        strSQL = strSQL & "AND "
+                                        strSQL = strSQL & "StockCards.Prod_ID = " & mlngProdID & " "
+                                        strSQL = strSQL & "AND "
+                                        strSQL = strSQL & "tblInboundsNoNullAllYears" & "_" & Format(m_lngUserID, "00") & ".Stock_ID = " & mlngStockID & " "
+                                        strSQL = strSQL & "AND "
+                                        strSQL = strSQL & "DateValue(OutDoc_Date) < DateValue('" & mdtmPeriodFrom & "') "
+                                        strSQL = strSQL & "AND "
+                                        strSQL = strSQL & "("
+                                        strSQL = strSQL & "UCase(Right(HistoryOutbounds.Out_Code, 8)) <> '<<TEST>>' "
+                                        strSQL = strSQL & "OR "
+                                        strSQL = strSQL & "IsNull(HistoryOutbounds.Out_Code) "
+                                        strSQL = strSQL & "OR "
+                                        strSQL = strSQL & "UCase(Right(HistoryOutbounds.Out_Code, 11)) = '<<CLOSURE>>'"
+                                        strSQL = strSQL & ") "
+                                        strSQL = strSQL & "GROUP BY "
+                                        strSQL = strSQL & "HistoryOutbounds.OutDoc_ID" & IIf(mlngProdHandling = 0, ", In_Orig_Packages_Type", "")
+                                End Select
+                                
+                                strSQL = Replace(strSQL, "HistoryOutbounds", "HistoryOutbounds" & Right(intYearCtr, 2))
+                                strSQL = Replace(strSQL, "HistoryOutboundDocs", "HistoryOutboundDocs" & Right(intYearCtr, 2))
+295                             ExecuteNonQuery mconSADBEL, strSQL
+'295                             mconSADBEL.Execute strSQL
+                            End If
+                        Next intYearCtr
+
+300                     blnInboundsTablesCreated = True
+                        
+                        
+                        ' Perform at least once if there is at least one existing archive database in the period range
+305                     For intYearCtr = mintPeriodFromYear To mintPeriodToYear
+310                         strHistoryPath = NoBackSlash(strSADBELPath) & "\" & "mdb_history" & Right(intYearCtr, 2) & ".mdb"
+'310                         strHistoryPath = Mid(strSADBELPath, 1, InStrRev(strSADBELPath, "\" & Dir(strSADBELPath), , vbTextCompare)) & "mdb_history" & Right(intYearCtr, 2) & ".mdb"
+                            
+                            Select Case g_objDataSourceProperties.DatabaseType
+                                Case DatabaseType_ACCESS97, DatabaseType_ACCESS2003
+                                    blnHistoryDBExists = (Len(Dir(strHistoryPath)) > 0)
+                                Case DatabaseType_SQLSERVER
+                                    ' TO DO FOR CP.NET
+                                Case Else
+                                    Debug.Assert False
+                            End Select
+
+315                         If blnHistoryDBExists Then
+'315                         If (Len(Dir(strHistoryPath)) > 0) Then
+320                                 strSQL = vbNullString
+                                    strSQL = strSQL & "SELECT "
+                                    strSQL = strSQL & "SUM(Subtotal_Packages_Qty_Wgt) AS Total_Packages_Qty_Wgt, "
+                                    strSQL = strSQL & "Packages_Type "
+                                    strSQL = strSQL & "INTO "
+                                    strSQL = strSQL & "tblOutboundTotal" & "_" & Format(m_lngUserID, "00") & " "
+                                    strSQL = strSQL & "FROM "
+                                    strSQL = strSQL & "tblInboundTotal" & "_" & Format(m_lngUserID, "00") & " "
+                                    strSQL = strSQL & "WHERE "
+                                    strSQL = strSQL & "Packages_Type <> '**' "
+                                    strSQL = strSQL & "GROUP BY "
+                                    strSQL = strSQL & "Packages_Type "
+                                    strSQL = strSQL & "ORDER BY "
+                                    strSQL = strSQL & "Packages_Type"
+325                             ExecuteNonQuery mconSADBEL, strSQL
+'325                             mconSADBEL.Execute strSQL
+                                
+                                
+330                                 strSQL = vbNullString
+                                    strSQL = strSQL & "SELECT "
+                                    strSQL = strSQL & "'' AS Seq_Num, "
+                                    strSQL = strSQL & "'BEGINSTOCK' AS Doc_Type, "
+                                    strSQL = strSQL & "'' AS Doc_Num, "
+                                    strSQL = strSQL & "'' AS Doc_MRN, "
+                                    strSQL = strSQL & "CDate(0) AS Doc_Date, "
+                                    strSQL = strSQL & "'' AS Cert_Type, "
+                                    strSQL = strSQL & "'' AS Cert_Num, "
+                                    strSQL = strSQL & "'' AS Comm_Settlement, "
+                                    strSQL = strSQL & "0 AS Doc_Manual, "
+                                    strSQL = strSQL & "'' AS Job_Num, "
+                                    strSQL = strSQL & "'' AS Batch_Num, "
+                                    strSQL = strSQL & "Total_Packages_Qty_Wgt "
+                                    strSQL = strSQL & IIf(mlngProdHandling = 0, ", Packages_Type", "") & ", "
+                                    strSQL = strSQL & "0 AS Source_In_ID, "
+                                    strSQL = strSQL & "'' AS InNoNull_Code "
+                                    strSQL = strSQL & "INTO "
+                                    strSQL = strSQL & "tblPrevMovements" & "_" & Format(m_lngUserID, "00") & " "
+                                    strSQL = strSQL & "FROM "
+                                    strSQL = strSQL & "tblOutboundTotal" & "_" & Format(m_lngUserID, "00") & " "
+335                             ExecuteNonQuery mconSADBEL, strSQL
+'335                             mconSADBEL.Execute strSQL
+                                
+                                ' bakit meron nito? Nag-loop pa...
+                                Exit For
+                            End If
+                        Next intYearCtr
+                        
+                        
+                        
+340                     For intYearCtr = mintPeriodFromYear To mintPeriodToYear
+345                         strHistoryPath = NoBackSlash(strSADBELPath) & "\" & "mdb_history" & Right(intYearCtr, 2) & ".mdb"
+'345                         strHistoryPath = Mid(strSADBELPath, 1, InStrRev(strSADBELPath, "\" & Dir(strSADBELPath), , vbTextCompare)) & "mdb_history" & Right(intYearCtr, 2) & ".mdb"
+                            
+                            Select Case g_objDataSourceProperties.DatabaseType
+                                Case DatabaseType_ACCESS97, DatabaseType_ACCESS2003
+                                    blnHistoryDBExists = (Len(Dir(strHistoryPath)) > 0)
+                                Case DatabaseType_SQLSERVER
+                                    ' TO DO FOR CP.NET
+                                Case Else
+                                    Debug.Assert False
+                            End Select
+
+350                         If blnHistoryDBExists Then
+'350                         If (Len(Dir(strHistoryPath)) > 0) Then
+                                On Error Resume Next
+360                             ExecuteNonQuery mconSADBEL, "DROP TABLE tblInboundTotal" & "_" & Format(m_lngUserID, "00")
+365                             ExecuteNonQuery mconSADBEL, "DROP TABLE tblOutboundTotal" & "_" & Format(m_lngUserID, "00")
+'360                             mconSADBEL.Execute "DROP TABLE tblInboundTotal" & "_" & Format(m_lngUserID, "00")
+'365                             mconSADBEL.Execute "DROP TABLE tblOutboundTotal" & "_" & Format(m_lngUserID, "00")
+                                On Error GoTo ErrHandler
+                                
+370                             Select Case mintFilterType
+                                    Case FilterStockID
+375                                     strSQL = vbNullString
+                                        strSQL = strSQL & "SELECT "
+                                        strSQL = strSQL & "tblInboundsNoNull" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".InDoc_ID AS Doc_ID, "
+                                        strSQL = strSQL & "InNoNull_Source_In_ID AS Source_In_ID, "
+                                        strSQL = strSQL & "InNoNull_Code as Code, "
+                                        strSQL = strSQL & "SUM(In_Packages_Qty_Wgt) AS Total_Packages_Qty_Wgt, "
+                                        strSQL = strSQL & Choose(mlngProdHandling + 1, "In_Orig_Packages_Type", "'KG'", "'KG'") & " AS Packages_Type "
+                                        strSQL = strSQL & "INTO "
+                                        strSQL = strSQL & "tblInboundTotal" & "_" & Format(m_lngUserID, "00") & " "
+                                        strSQL = strSQL & "FROM "
+                                        strSQL = strSQL & "HistoryInboundDocs INNER JOIN tblInboundsNoNull" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & " "
+                                        strSQL = strSQL & "ON HistoryInboundDocs.InDoc_ID = tblInboundsNoNull" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".InDoc_ID "
+                                        strSQL = strSQL & "WHERE "
+                                        strSQL = strSQL & "Stock_ID = " & mlngFilterID & " "
+                                        strSQL = strSQL & "AND "
+                                        strSQL = strSQL & "DateValue(InDoc_Date) BETWEEN DateValue('" & mdtmPeriodFrom & "') AND DateValue('" & mdtmPeriodTo & "') "
+                                        strSQL = strSQL & "AND ("
+                                        strSQL = strSQL & "(In_Packages_Qty_Wgt >= 0 AND In_Avl_Qty_Wgt >= 0) "
+                                        strSQL = strSQL & "OR "
+                                        strSQL = strSQL & "(In_Packages_Qty_Wgt < 0 AND In_Avl_Qty_Wgt < 0) "
+                                        strSQL = strSQL & "OR "
+                                        strSQL = strSQL & "(In_Packages_Qty_Wgt >= 0 AND In_Avl_Qty_Wgt < 0 AND In_TotalOut_Qty_Wgt > 0)) "
+                                        strSQL = strSQL & "GROUP BY "
+                                        strSQL = strSQL & "tblInboundsNoNull" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".InDoc_ID, "
+                                        strSQL = strSQL & "InNoNull_Source_In_ID" & IIf(mlngProdHandling = 0, ", In_Orig_Packages_Type", "") & ", "
+                                        strSQL = strSQL & "InNoNull_Code"
+                                        
+380                                 Case FilterProductID
+385                                     strSQL = vbNullString
+                                        strSQL = strSQL & "SELECT "
+                                        strSQL = strSQL & "tblInboundsNoNull" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".InDoc_ID AS Doc_ID, "
+                                        strSQL = strSQL & "InNoNull_Source_In_ID AS Source_In_ID, "
+                                        strSQL = strSQL & "InNoNull_Code as Code, "
+                                        strSQL = strSQL & "SUM(In_Packages_Qty_Wgt) AS Total_Packages_Qty_Wgt, "
+                                        strSQL = strSQL & Choose(mlngProdHandling + 1, "In_Orig_Packages_Type", "'KG'", "'KG'") & " AS Packages_Type "
+                                        strSQL = strSQL & "INTO "
+                                        strSQL = strSQL & "tblInboundTotal" & "_" & Format(m_lngUserID, "00") & " "
+                                        strSQL = strSQL & "FROM "
+                                        strSQL = strSQL & "HistoryInboundDocs INNER JOIN ("
+                                        strSQL = strSQL & "tblInboundsNoNull" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & " INNER JOIN StockCards "
+                                        strSQL = strSQL & "ON tblInboundsNoNull" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".Stock_ID = StockCards.Stock_ID) "
+                                        strSQL = strSQL & "ON HistoryInboundDocs.InDoc_ID = tblInboundsNoNull" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".InDoc_ID "
+                                        strSQL = strSQL & "WHERE "
+                                        strSQL = strSQL & "Prod_ID = " & mlngFilterID & " "
+                                        strSQL = strSQL & "AND "
+                                        strSQL = strSQL & "tblInboundsNoNull" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".Stock_ID = " & mlngStockID & " "
+                                        strSQL = strSQL & "AND "
+                                        strSQL = strSQL & "DateValue(InDoc_Date) BETWEEN DateValue('" & mdtmPeriodFrom & "') AND DateValue('" & mdtmPeriodTo & "') "
+                                        strSQL = strSQL & "AND "
+                                        strSQL = strSQL & "("
+                                        strSQL = strSQL & "(In_Packages_Qty_Wgt >= 0 AND In_Avl_Qty_Wgt >= 0) "
+                                        strSQL = strSQL & "OR "
+                                        strSQL = strSQL & "(In_Packages_Qty_Wgt < 0 AND In_Avl_Qty_Wgt < 0) "
+                                        strSQL = strSQL & "OR "
+                                        strSQL = strSQL & "(In_Packages_Qty_Wgt >= 0 AND In_Avl_Qty_Wgt < 0 AND In_TotalOut_Qty_Wgt > 0)) "
+                                        strSQL = strSQL & "GROUP BY "
+                                        strSQL = strSQL & "tblInboundsNoNull" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".InDoc_ID, "
+                                        strSQL = strSQL & "InNoNull_Source_In_ID, "
+                                        strSQL = strSQL & IIf(mlngProdHandling = 0, "In_Orig_Packages_Type, ", "")
+                                        strSQL = strSQL & "InNoNull_Code"
+                                        
+390                                 Case FilterEntrepotID
+395                                     strSQL = vbNullString
+                                        strSQL = strSQL & "SELECT "
+                                        strSQL = strSQL & "tblInboundsNoNull" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".InDoc_ID AS Doc_ID, "
+                                        strSQL = strSQL & "InNoNull_Source_In_ID AS Source_In_ID, "
+                                        strSQL = strSQL & "InNoNull_Code as Code, "
+                                        strSQL = strSQL & "SUM(In_Packages_Qty_Wgt) AS Total_Packages_Qty_Wgt, "
+                                        strSQL = strSQL & Choose(mlngProdHandling + 1, "In_Orig_Packages_Type", "'KG'", "'KG'") & " AS Packages_Type "
+                                        strSQL = strSQL & "INTO "
+                                        strSQL = strSQL & "tblInboundTotal" & "_" & Format(m_lngUserID, "00") & " "
+                                        strSQL = strSQL & "FROM "
+                                        strSQL = strSQL & "HistoryInboundDocs INNER JOIN ("
+                                        strSQL = strSQL & "tblInboundsNoNull" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & " INNER JOIN ("
+                                        strSQL = strSQL & "StockCards INNER JOIN Products "
+                                        strSQL = strSQL & "ON StockCards.Prod_ID = Products.Prod_ID) "
+                                        strSQL = strSQL & "ON tblInboundsNoNull" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".Stock_ID = StockCards.Stock_ID) "
+                                        strSQL = strSQL & "ON HistoryInboundDocs.InDoc_ID = tblInboundsNoNull" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".InDoc_ID "
+                                        strSQL = strSQL & "WHERE "
+                                        strSQL = strSQL & "Entrepot_ID = " & mlngFilterID & " "
+                                        strSQL = strSQL & "AND "
+                                        strSQL = strSQL & "StockCards.Prod_ID = " & mlngProdID & " "
+                                        strSQL = strSQL & "AND "
+                                        strSQL = strSQL & "tblInboundsNoNull" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".Stock_ID = " & mlngStockID & " "
+                                        strSQL = strSQL & "AND "
+                                        strSQL = strSQL & "DateValue(InDoc_Date) BETWEEN DateValue('" & mdtmPeriodFrom & "') AND DateValue('" & mdtmPeriodTo & "') "
+                                        strSQL = strSQL & "AND "
+                                        strSQL = strSQL & "("
+                                        strSQL = strSQL & "(In_Packages_Qty_Wgt >= 0 AND In_Avl_Qty_Wgt >= 0) "
+                                        strSQL = strSQL & "OR "
+                                        strSQL = strSQL & "(In_Packages_Qty_Wgt < 0 AND In_Avl_Qty_Wgt < 0) "
+                                        strSQL = strSQL & "OR "
+                                        strSQL = strSQL & "(In_Packages_Qty_Wgt >= 0 AND In_Avl_Qty_Wgt < 0 AND In_TotalOut_Qty_Wgt > 0)"
+                                        strSQL = strSQL & ") "
+                                        strSQL = strSQL & "GROUP BY "
+                                        strSQL = strSQL & "tblInboundsNoNull" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".InDoc_ID, "
+                                        strSQL = strSQL & "InNoNull_Source_In_ID, "
+                                        strSQL = strSQL & IIf(mlngProdHandling = 0, "In_Orig_Packages_Type, ", "")
+                                        strSQL = strSQL & "InNoNull_Code"
+                                        
+                                End Select
+                                
+                                'strSQL = Replace(strSQL, "HistoryInbounds", "HistoryInbounds" & right(intYearCtr,2))
+                                strSQL = Replace(strSQL, "HistoryInboundDocs", "HistoryInboundDocs" & Right(intYearCtr, 2))
+400                             ExecuteNonQuery mconSADBEL, strSQL
+'400                             mconSADBEL.Execute strSQL
+                                
+                                
+405                             Select Case mintFilterType
+                                    Case FilterStockID
+410                                     strSQL = vbNullString
+                                        strSQL = strSQL & "SELECT "
+                                        strSQL = strSQL & "tblOutbounds" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".OutDoc_ID AS Doc_ID, "
+                                        strSQL = strSQL & "Out_Source_In_ID AS Source_In_ID, "
+                                        strSQL = strSQL & "tblOutbounds" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".InNoNull_Code AS Code, "
+                                        strSQL = strSQL & "SUM(Out_Packages_Qty_Wgt) AS Total_Packages_Qty_Wgt, "
+                                        strSQL = strSQL & Choose(mlngProdHandling + 1, "In_Orig_Packages_Type", "'KG'", "'KG'") & " AS Packages_Type "
+                                        strSQL = strSQL & "INTO "
+                                        strSQL = strSQL & "tblOutboundTotal" & "_" & Format(m_lngUserID, "00") & " "
+                                        strSQL = strSQL & "FROM "
+                                        strSQL = strSQL & "HistoryOutboundDocs INNER JOIN ("
+                                        strSQL = strSQL & "tblOutbounds" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & " INNER JOIN tblInboundsNoNullAllYears" & "_" & Format(m_lngUserID, "00") & " "
+                                        strSQL = strSQL & "ON tblOutbounds" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".In_ID = tblInboundsNoNullAllYears" & "_" & Format(m_lngUserID, "00") & ".In_ID) "
+                                        strSQL = strSQL & "ON HistoryOutboundDocs.OutDoc_ID = tblOutbounds" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".OutDoc_ID "
+                                        strSQL = strSQL & "WHERE "
+                                        strSQL = strSQL & "Stock_ID = " & mlngFilterID & " "
+                                        strSQL = strSQL & "AND "
+                                        strSQL = strSQL & "DateValue(OutDoc_Date) BETWEEN DateValue('" & mdtmPeriodFrom & "') AND DateValue('" & mdtmPeriodTo & "') "
+                                        strSQL = strSQL & "GROUP BY "
+                                        strSQL = strSQL & "tblOutbounds" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".OutDoc_ID, "
+                                        strSQL = strSQL & "Out_Source_In_ID" & IIf(mlngProdHandling = 0, ", In_Orig_Packages_Type", "") & ", "
+                                        strSQL = strSQL & "tblOutbounds" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".InNoNull_Code"
+                                        
+415                                 Case FilterProductID
+420                                     strSQL = vbNullString
+                                        strSQL = strSQL & "SELECT "
+                                        strSQL = strSQL & "tblOutbounds" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".OutDoc_ID AS Doc_ID, "
+                                        strSQL = strSQL & "Out_Source_In_ID AS Source_In_ID, "
+                                        strSQL = strSQL & "tblOutbounds" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".InNoNull_Code AS Code, "
+                                        strSQL = strSQL & "SUM(Out_Packages_Qty_Wgt) AS Total_Packages_Qty_Wgt, "
+                                        strSQL = strSQL & Choose(mlngProdHandling + 1, "In_Orig_Packages_Type", "'KG'", "'KG'") & " AS Packages_Type "
+                                        strSQL = strSQL & "INTO "
+                                        strSQL = strSQL & "tblOutboundTotal" & "_" & Format(m_lngUserID, "00") & " "
+                                        strSQL = strSQL & "FROM "
+                                        strSQL = strSQL & "HistoryOutboundDocs INNER JOIN ("
+                                        strSQL = strSQL & "tblOutbounds" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & " INNER JOIN ("
+                                        strSQL = strSQL & "tblInboundsNoNullAllYears" & "_" & Format(m_lngUserID, "00") & " INNER JOIN StockCards "
+                                        strSQL = strSQL & "ON tblInboundsNoNullAllYears" & "_" & Format(m_lngUserID, "00") & ".Stock_ID = StockCards.Stock_ID) "
+                                        strSQL = strSQL & "ON tblOutbounds" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".In_ID = tblInboundsNoNullAllYears" & "_" & Format(m_lngUserID, "00") & ".In_ID) "
+                                        strSQL = strSQL & "ON HistoryOutboundDocs.OutDoc_ID = tblOutbounds" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".OutDoc_ID "
+                                        strSQL = strSQL & "WHERE "
+                                        strSQL = strSQL & "Prod_ID = " & mlngFilterID & " "
+                                        strSQL = strSQL & "AND "
+                                        strSQL = strSQL & "tblInboundsNoNullAllYears" & "_" & Format(m_lngUserID, "00") & ".Stock_ID = " & mlngStockID & " "
+                                        strSQL = strSQL & "AND "
+                                        strSQL = strSQL & "DateValue(OutDoc_Date) BETWEEN DateValue('" & mdtmPeriodFrom & "') AND DateValue('" & mdtmPeriodTo & "')" & " "
+                                        strSQL = strSQL & "GROUP BY "
+                                        strSQL = strSQL & "tblOutbounds" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".OutDoc_ID, "
+                                        strSQL = strSQL & "Out_Source_In_ID, "
+                                        strSQL = strSQL & IIf(mlngProdHandling = 0, "In_Orig_Packages_Type, ", "")
+                                        strSQL = strSQL & "tblOutbounds" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".InNoNull_Code "
+                                        
+425                                 Case FilterEntrepotID
+430                                     strSQL = vbNullString
+                                        strSQL = strSQL & "SELECT "
+                                        strSQL = strSQL & "tblOutbounds" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".OutDoc_ID AS Doc_ID, "
+                                        strSQL = strSQL & "Out_Source_In_ID AS Source_In_ID, "
+                                        strSQL = strSQL & "tblOutbounds" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".InNoNull_Code AS Code, "
+                                        strSQL = strSQL & "SUM(Out_Packages_Qty_Wgt) AS Total_Packages_Qty_Wgt, "
+                                        strSQL = strSQL & Choose(mlngProdHandling + 1, "In_Orig_Packages_Type", "'KG'", "'KG'") & " AS Packages_Type "
+                                        strSQL = strSQL & "INTO "
+                                        strSQL = strSQL & "tblOutboundTotal" & "_" & Format(m_lngUserID, "00") & " "
+                                        strSQL = strSQL & "FROM "
+                                        strSQL = strSQL & "HistoryOutboundDocs INNER JOIN ("
+                                        strSQL = strSQL & "tblOutbounds" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & " INNER JOIN ("
+                                        strSQL = strSQL & "tblInboundsNoNullAllYears" & "_" & Format(m_lngUserID, "00") & " INNER JOIN ("
+                                        strSQL = strSQL & "StockCards INNER JOIN Products "
+                                        strSQL = strSQL & "ON StockCards.Prod_ID = Products.Prod_ID) "
+                                        strSQL = strSQL & "ON tblInboundsNoNullAllYears" & "_" & Format(m_lngUserID, "00") & ".Stock_ID = StockCards.Stock_ID) "
+                                        strSQL = strSQL & "ON tblOutbounds" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".In_ID = tblInboundsNoNullAllYears" & "_" & Format(m_lngUserID, "00") & ".In_ID) "
+                                        strSQL = strSQL & "ON HistoryOutboundDocs.OutDoc_ID = tblOutbounds" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".OutDoc_ID "
+                                        strSQL = strSQL & "WHERE "
+                                        strSQL = strSQL & "Entrepot_ID = " & mlngFilterID & " "
+                                        strSQL = strSQL & "AND "
+                                        strSQL = strSQL & "StockCards.Prod_ID = " & mlngProdID & " "
+                                        strSQL = strSQL & "AND "
+                                        strSQL = strSQL & "tblInboundsNoNullAllYears" & "_" & Format(m_lngUserID, "00") & ".Stock_ID = " & mlngStockID & " "
+                                        strSQL = strSQL & "AND "
+                                        strSQL = strSQL & "DateValue(OutDoc_Date) BETWEEN DateValue('" & mdtmPeriodFrom & "') AND DateValue('" & mdtmPeriodTo & "') "
+                                        strSQL = strSQL & "GROUP BY "
+                                        strSQL = strSQL & "tblOutbounds" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".OutDoc_ID, "
+                                        strSQL = strSQL & "Out_Source_In_ID, "
+                                        strSQL = strSQL & IIf(mlngProdHandling = 0, "In_Orig_Packages_Type, ", "")
+                                        strSQL = strSQL & "tblOutbounds" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".InNoNull_Code"
+                                        
+                                End Select
+                                
+                                'strSQL = Replace(strSQL, "HistoryInbounds", "HistoryInbounds" & right(intYearCtr,2))
+                                strSQL = Replace(strSQL, "HistoryOutboundDocs", "HistoryOutboundDocs" & Right(intYearCtr, 2))
+435                             ExecuteNonQuery mconSADBEL, strSQL
+'435                             mconSADBEL.Execute strSQL
+                                
+                                
+440                             Select Case mintFilterType
+                                    Case FilterStockID
+445                                     strSQL = vbNullString
+                                        strSQL = strSQL & "INSERT INTO "
+                                        strSQL = strSQL & "tblPrevMovements" & "_" & Format(m_lngUserID, "00") & " "
+                                        strSQL = strSQL & "SELECT "
+                                        strSQL = strSQL & "HistoryInboundDocs.InDoc_SeqNum AS Seq_Num, "
+                                        strSQL = strSQL & "InDoc_Type AS Doc_Type, "
+                                        strSQL = strSQL & "InDoc_Num AS Doc_Num, "
+                                        strSQL = strSQL & "'' AS Doc_MRN, "
+                                        strSQL = strSQL & "InDoc_Date AS Doc_Date, "
+                                        strSQL = strSQL & "InDoc_Cert_Type AS Cert_Type, "
+                                        strSQL = strSQL & "InDoc_Cert_Num AS Cert_Num, "
+                                        strSQL = strSQL & "'' AS Comm_Settlement, "
+                                        strSQL = strSQL & "0 AS Doc_Manual, "
+                                        strSQL = strSQL & "In_Job_Num AS Job_Num, "
+                                        strSQL = strSQL & "In_Batch_Num AS Batch_Num, "
+                                        strSQL = strSQL & "Total_Packages_Qty_Wgt "
+                                        strSQL = strSQL & IIf(mlngProdHandling = 0, ", Packages_Type", "") & ", "
+                                        strSQL = strSQL & "InNoNull_Source_In_ID AS Source_In_ID, "
+                                        strSQL = strSQL & "InNoNull_Code "
+                                        strSQL = strSQL & "FROM "
+                                        strSQL = strSQL & "tblInboundTotal" & "_" & Format(m_lngUserID, "00") & " INNER JOIN ("
+                                        strSQL = strSQL & "HistoryInboundDocs INNER JOIN tblInboundsNoNull" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & " "
+                                        strSQL = strSQL & "ON HistoryInboundDocs.InDoc_ID = tblInboundsNoNull" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".InDoc_ID) "
+                                        strSQL = strSQL & "ON tblInboundTotal" & "_" & Format(m_lngUserID, "00") & ".Doc_ID = tblInboundsNoNull" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".InDoc_ID "
+                                        strSQL = strSQL & "AND tblInboundTotal" & "_" & Format(m_lngUserID, "00") & ".Source_In_ID = tblInboundsNoNull" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".InNoNull_Source_In_ID "
+                                        strSQL = strSQL & IIf(mlngProdHandling = 0, " AND tblInboundTotal" & "_" & Format(m_lngUserID, "00") & ".Packages_Type = tblInboundsNoNull" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".In_Orig_Packages_Type", "") & " " 'allanent nov7
+                                        strSQL = strSQL & "WHERE "
+                                        strSQL = strSQL & "tblInboundsNoNull" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".Stock_ID = " & mlngFilterID & " "
+                                        strSQL = strSQL & "AND "
+                                        strSQL = strSQL & "DateValue(HistoryInboundDocs.InDoc_Date) BETWEEN DateValue('" & mdtmPeriodFrom & "') AND DateValue('" & mdtmPeriodTo & "')"
+                                        
+450                                 Case FilterProductID
+455                                     strSQL = vbNullString
+                                        strSQL = strSQL & "INSERT INTO "
+                                        strSQL = strSQL & "tblPrevMovements" & "_" & Format(m_lngUserID, "00") & " "
+                                        strSQL = strSQL & "SELECT "
+                                        strSQL = strSQL & "HistoryInboundDocs.InDoc_SeqNum AS Seq_Num, "
+                                        strSQL = strSQL & "InDoc_Type AS Doc_Type, "
+                                        strSQL = strSQL & "InDoc_Num AS Doc_Num, "
+                                        strSQL = strSQL & "'' AS Doc_MRN, "
+                                        strSQL = strSQL & "InDoc_Date AS Doc_Date, "
+                                        strSQL = strSQL & "InDoc_Cert_Type AS Cert_Type, "
+                                        strSQL = strSQL & "InDoc_Cert_Num AS Cert_Num, "
+                                        strSQL = strSQL & "'' AS Comm_Settlement, "
+                                        strSQL = strSQL & "0 AS Doc_Manual, "
+                                        strSQL = strSQL & "In_Job_Num AS Job_Num, "
+                                        strSQL = strSQL & "In_Batch_Num AS Batch_Num, "
+                                        strSQL = strSQL & "Total_Packages_Qty_Wgt, "
+                                        strSQL = strSQL & IIf(mlngProdHandling = 0, "Packages_Type, ", "")
+                                        strSQL = strSQL & "InNoNull_Source_In_ID AS Source_In_ID, "
+                                        strSQL = strSQL & "InNoNull_Code "
+                                        strSQL = strSQL & "FROM "
+                                        strSQL = strSQL & "tblInboundTotal" & "_" & Format(m_lngUserID, "00") & " INNER JOIN ("
+                                        strSQL = strSQL & "HistoryInboundDocs INNER JOIN ("
+                                        strSQL = strSQL & "tblInboundsNoNull" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & " INNER JOIN StockCards "
+                                        strSQL = strSQL & "ON tblInboundsNoNull" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".Stock_ID = StockCards.Stock_ID) "
+                                        strSQL = strSQL & "ON HistoryInboundDocs.InDoc_ID = tblInboundsNoNull" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".InDoc_ID) "
+                                        strSQL = strSQL & "ON tblInboundTotal" & "_" & Format(m_lngUserID, "00") & ".Doc_ID = tblInboundsNoNull" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".InDoc_ID "
+                                        strSQL = strSQL & "AND "
+                                        strSQL = strSQL & "tblInboundTotal" & "_" & Format(m_lngUserID, "00") & ".Source_In_ID = tblInboundsNoNull" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".InNoNull_Source_In_ID "
+                                        strSQL = strSQL & IIf(mlngProdHandling = 0, " AND tblInboundTotal" & "_" & Format(m_lngUserID, "00") & ".Packages_Type = tblInboundsNoNull" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".In_Orig_Packages_Type", "") & " "
+                                        strSQL = strSQL & "WHERE "
+                                        strSQL = strSQL & "StockCards.Prod_ID = " & mlngFilterID & " "
+                                        strSQL = strSQL & "AND "
+                                        strSQL = strSQL & "tblInboundsNoNull" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".Stock_ID = " & mlngStockID & " "
+                                        strSQL = strSQL & "AND "
+                                        strSQL = strSQL & "DateValue(HistoryInboundDocs.InDoc_Date) BETWEEN DateValue('" & mdtmPeriodFrom & "') AND DateValue('" & mdtmPeriodTo & "')"
+                                        
+460                                 Case FilterEntrepotID
+465                                     strSQL = vbNullString
+                                        strSQL = strSQL & "INSERT INTO "
+                                        strSQL = strSQL & "tblPrevMovements" & "_" & Format(m_lngUserID, "00") & " "
+                                        strSQL = strSQL & "SELECT "
+                                        strSQL = strSQL & "HistoryInboundDocs.InDoc_SeqNum AS Seq_Num, "
+                                        strSQL = strSQL & "InDoc_Type AS Doc_Type, "
+                                        strSQL = strSQL & "InDoc_Num AS Doc_Num, "
+                                        strSQL = strSQL & "'' AS Doc_MRN, "
+                                        strSQL = strSQL & "InDoc_Date AS Doc_Date, "
+                                        strSQL = strSQL & "InDoc_Cert_Type AS Cert_Type, "
+                                        strSQL = strSQL & "InDoc_Cert_Num AS Cert_Num, "
+                                        strSQL = strSQL & "'' AS Comm_Settlement, "
+                                        strSQL = strSQL & "0 AS Doc_Manual, "
+                                        strSQL = strSQL & "In_Job_Num AS Job_Num, "
+                                        strSQL = strSQL & "In_Batch_Num AS Batch_Num, "
+                                        strSQL = strSQL & "Total_Packages_Qty_Wgt, "
+                                        strSQL = strSQL & IIf(mlngProdHandling = 0, "Packages_Type, ", "")
+                                        strSQL = strSQL & "InNoNull_Source_In_ID AS Source_In_ID, "
+                                        strSQL = strSQL & "InNoNull_Code "
+                                        strSQL = strSQL & "FROM "
+                                        strSQL = strSQL & "tblInboundTotal" & "_" & Format(m_lngUserID, "00") & " INNER JOIN ("
+                                        strSQL = strSQL & "HistoryInboundDocs INNER JOIN ("
+                                        strSQL = strSQL & "tblInboundsNoNull" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & " INNER JOIN ("
+                                        strSQL = strSQL & "StockCards INNER JOIN Products "
+                                        strSQL = strSQL & "ON StockCards.Prod_ID = Products.Prod_ID) "
+                                        strSQL = strSQL & "ON tblInboundsNoNull" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".Stock_ID = StockCards.Stock_ID) "
+                                        strSQL = strSQL & "ON HistoryInboundDocs.InDoc_ID = tblInboundsNoNull" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".InDoc_ID) "
+                                        strSQL = strSQL & "ON tblInboundTotal" & "_" & Format(m_lngUserID, "00") & ".Doc_ID = tblInboundsNoNull" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".InDoc_ID "
+                                        strSQL = strSQL & "AND "
+                                        strSQL = strSQL & "tblInboundTotal" & "_" & Format(m_lngUserID, "00") & ".Source_In_ID = tblInboundsNoNull" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".InNoNull_Source_In_ID "
+                                        strSQL = strSQL & IIf(mlngProdHandling = 0, " AND tblInboundTotal" & "_" & Format(m_lngUserID, "00") & ".Packages_Type = tblInboundsNoNull" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".In_Orig_Packages_Type", "") & " "
+                                        strSQL = strSQL & "WHERE "
+                                        strSQL = strSQL & "Products.Entrepot_ID = " & mlngFilterID & " "
+                                        strSQL = strSQL & "AND "
+                                        strSQL = strSQL & "StockCards.Prod_ID = " & mlngProdID & " "
+                                        strSQL = strSQL & "AND "
+                                        strSQL = strSQL & "tblInboundsNoNull" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".Stock_ID = " & mlngStockID & " "
+                                        strSQL = strSQL & "AND "
+                                        strSQL = strSQL & "DateValue(HistoryInboundDocs.InDoc_Date) BETWEEN DateValue('" & mdtmPeriodFrom & "') AND DateValue('" & mdtmPeriodTo & "')"
+                                        
+                                End Select
+                                
+                                'strSQL = Replace(strSQL, "HistoryInbounds", "HistoryInbounds" & right(intYearCtr,2))
+                                strSQL = Replace(strSQL, "HistoryInboundDocs", "HistoryInboundDocs" & Right(intYearCtr, 2))
+470                             ExecuteNonQuery mconSADBEL, strSQL
+'470                             mconSADBEL.Execute strSQL
+                                
+                                
+475                             Select Case mintFilterType
+                                    Case FilterStockID
+480                                     strSQL = vbNullString
+                                        strSQL = strSQL & "INSERT INTO "
+                                        strSQL = strSQL & "tblPrevMovements" & "_" & Format(m_lngUserID, "00") & " "
+                                        strSQL = strSQL & "SELECT "
+                                        strSQL = strSQL & "0 AS Seq_Num, "
+                                        strSQL = strSQL & "OutDoc_Type AS Doc_Type, "
+                                        strSQL = strSQL & "OutDoc_Num AS Doc_Num, "
+                                        strSQL = strSQL & "OutDoc_MRN AS Doc_MRN, "
+                                        strSQL = strSQL & "IIf(InStr(1, Right(OutDoc_Date,8), ':'), OutDoc_Date, IIf(UCase(Right(tblOutbounds" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".InNoNull_Code, 11)) = '<<CLOSURE>>', OutDoc_Date & ' 23:59:57', OutDoc_Date & ' 23:59:56')) AS Doc_Date, "
+                                        strSQL = strSQL & "'' AS Cert_Type, "
+                                        strSQL = strSQL & "'' AS Cert_Num, "
+                                        strSQL = strSQL & "OutDoc_Comm_Settlement AS Comm_Settlement, "
+                                        strSQL = strSQL & "OutDoc_Global AS Doc_Manual, "
+                                        strSQL = strSQL & "Out_Job_Num AS Job_Num, "
+                                        strSQL = strSQL & "Out_Batch_Num AS Batch_Num, "
+                                        strSQL = strSQL & "Total_Packages_Qty_Wgt "
+                                        strSQL = strSQL & IIf(mlngProdHandling = 0, ", Packages_Type", "") & ", "
+                                        strSQL = strSQL & "tblOutbounds" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".Out_Source_In_ID AS Source_In_ID, "
+                                        strSQL = strSQL & "tblOutbounds" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".InNoNull_Code "
+                                        strSQL = strSQL & "FROM "
+                                        strSQL = strSQL & "tblOutboundTotal" & "_" & Format(m_lngUserID, "00") & " INNER JOIN ("
+                                        strSQL = strSQL & "HistoryOutboundDocs INNER JOIN ("
+                                        strSQL = strSQL & "tblOutbounds" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & " INNER JOIN tblInboundsNoNullAllYears" & "_" & Format(m_lngUserID, "00") & " "
+                                        strSQL = strSQL & "ON tblOutbounds" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".In_ID = tblInboundsNoNullAllYears" & "_" & Format(m_lngUserID, "00") & ".In_ID) "
+                                        strSQL = strSQL & "ON HistoryOutboundDocs.OutDoc_ID = tblOutbounds" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".OutDoc_ID) "
+                                        strSQL = strSQL & "ON tblOutboundTotal" & "_" & Format(m_lngUserID, "00") & ".Doc_ID = tblOutbounds" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".OutDoc_ID "
+                                        strSQL = strSQL & "AND tblOutboundTotal" & "_" & Format(m_lngUserID, "00") & ".Source_In_ID = tblOutbounds" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".Out_Source_In_ID "
+                                        strSQL = strSQL & IIf(mlngProdHandling = 0, " AND tblOutboundTotal" & "_" & Format(m_lngUserID, "00") & ".Packages_Type = tblInboundsNoNullAllYears" & "_" & Format(m_lngUserID, "00") & ".In_Orig_Packages_Type", "") & " "
+                                        strSQL = strSQL & "WHERE "
+                                        strSQL = strSQL & "tblInboundsNoNullAllYears" & "_" & Format(m_lngUserID, "00") & ".Stock_ID = " & mlngFilterID & " "
+                                        strSQL = strSQL & "AND "
+                                        strSQL = strSQL & "DateValue(HistoryOutboundDocs.OutDoc_Date) BETWEEN DateValue('" & mdtmPeriodFrom & "') AND DateValue('" & mdtmPeriodTo & "')"
+                                        
+485                                 Case FilterProductID
+490                                     strSQL = vbNullString
+                                        strSQL = strSQL & "INSERT INTO "
+                                        strSQL = strSQL & "tblPrevMovements" & "_" & Format(m_lngUserID, "00") & " "
+                                        strSQL = strSQL & "SELECT "
+                                        strSQL = strSQL & "0 AS Seq_Num, "
+                                        strSQL = strSQL & "OutDoc_Type AS Doc_Type, "
+                                        strSQL = strSQL & "OutDoc_Num AS Doc_Num, "
+                                        strSQL = strSQL & "OutDoc_MRN AS Doc_MRN, "
+                                        strSQL = strSQL & "IIf(InStr(1, Right(OutDoc_Date,8), ':'), OutDoc_Date, IIf(UCase(Right( tblOutbounds" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".INNONULL_CODE,11)) = '<<CLOSURE>>', OutDoc_Date & ' 23:59:57', OutDoc_Date & ' 23:59:56')) AS Doc_Date, "
+                                        strSQL = strSQL & "'' AS Cert_Type, "
+                                        strSQL = strSQL & "'' AS Cert_Num, "
+                                        strSQL = strSQL & "OutDoc_Comm_Settlement AS Comm_Settlement, "
+                                        strSQL = strSQL & "OutDoc_Global AS Doc_Manual, "
+                                        strSQL = strSQL & "Out_Job_Num AS Job_Num, "
+                                        strSQL = strSQL & "Out_Batch_Num AS Batch_Num, "
+                                        strSQL = strSQL & "Total_Packages_Qty_Wgt "
+                                        strSQL = strSQL & IIf(mlngProdHandling = 0, ", Packages_Type", "") & ", tblOutbounds" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".Out_Source_In_ID AS Source_In_ID, "
+                                        strSQL = strSQL & "tblOutbounds" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".InNoNull_Code "
+                                        strSQL = strSQL & "FROM "
+                                        strSQL = strSQL & "tblOutboundTotal" & "_" & Format(m_lngUserID, "00") & " INNER JOIN ("
+                                        strSQL = strSQL & "HistoryOutboundDocs INNER JOIN ("
+                                        strSQL = strSQL & "tblOutbounds" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & " INNER JOIN ("
+                                        strSQL = strSQL & "tblInboundsNoNullAllYears" & "_" & Format(m_lngUserID, "00") & " INNER JOIN StockCards "
+                                        strSQL = strSQL & "ON tblInboundsNoNullAllYears" & "_" & Format(m_lngUserID, "00") & ".Stock_ID = StockCards.Stock_ID) "
+                                        strSQL = strSQL & "ON tblOutbounds" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".In_ID = tblInboundsNoNullAllYears" & "_" & Format(m_lngUserID, "00") & ".In_ID) "
+                                        strSQL = strSQL & "ON HistoryOutboundDocs.OutDoc_ID = tblOutbounds" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".OutDoc_ID) "
+                                        strSQL = strSQL & "ON tblOutboundTotal" & "_" & Format(m_lngUserID, "00") & ".Doc_ID = tblOutbounds" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".OutDoc_ID "
+                                        strSQL = strSQL & "AND tblOutboundTotal" & "_" & Format(m_lngUserID, "00") & ".Source_In_ID = tblOutbounds" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".Out_Source_In_ID "
+                                        strSQL = strSQL & IIf(mlngProdHandling = 0, " AND tblOutboundTotal" & "_" & Format(m_lngUserID, "00") & ".Packages_Type = tblInboundsNoNullAllYears" & "_" & Format(m_lngUserID, "00") & ".In_Orig_Packages_Type", "") & " "
+                                        strSQL = strSQL & "WHERE "
+                                        strSQL = strSQL & "StockCards.Prod_ID = " & mlngFilterID & " "
+                                        strSQL = strSQL & "AND "
+                                        strSQL = strSQL & "tblInboundsNoNullAllYears" & "_" & Format(m_lngUserID, "00") & ".Stock_ID = " & mlngStockID & " "
+                                        strSQL = strSQL & "AND "
+                                        strSQL = strSQL & "DateValue(HistoryOutboundDocs.OutDoc_Date) BETWEEN DateValue('" & mdtmPeriodFrom & "') AND DateValue('" & mdtmPeriodTo & "')"
+                                        
+495                                 Case FilterEntrepotID
+500                                     strSQL = vbNullString
+                                        strSQL = strSQL & "INSERT INTO "
+                                        strSQL = strSQL & "tblPrevMovements" & "_" & Format(m_lngUserID, "00") & " "
+                                        strSQL = strSQL & "SELECT "
+                                        strSQL = strSQL & "0 AS Seq_Num, "
+                                        strSQL = strSQL & "OutDoc_Type AS Doc_Type, "
+                                        strSQL = strSQL & "OutDoc_Num AS Doc_Num, "
+                                        strSQL = strSQL & "OutDoc_MRN AS Doc_MRN, "
+                                        strSQL = strSQL & "IIf(InStr(1, Right(OutDoc_Date, 8), ':'), OutDoc_Date, IIf(UCase(Right(tblOutbounds" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".INNONULL_CODE,11)) = '<<CLOSURE>>', OutDoc_Date & ' 23:59:57', OutDoc_Date & ' 23:59:56')) AS Doc_Date, "
+                                        strSQL = strSQL & "'' AS Cert_Type, "
+                                        strSQL = strSQL & "'' AS Cert_Num, "
+                                        strSQL = strSQL & "OutDoc_Comm_Settlement AS Comm_Settlement, "
+                                        strSQL = strSQL & "OutDoc_Global AS Doc_Manual, "
+                                        strSQL = strSQL & "Out_Job_Num AS Job_Num, "
+                                        strSQL = strSQL & "Out_Batch_Num AS Batch_Num, "
+                                        strSQL = strSQL & "Total_Packages_Qty_Wgt, "
+                                        strSQL = strSQL & IIf(mlngProdHandling = 0, "Packages_Type, ", "")
+                                        strSQL = strSQL & "tblOutbounds" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".Out_Source_In_ID AS Source_In_ID, "
+                                        strSQL = strSQL & "tblOutbounds" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".InNoNull_Code "
+                                        strSQL = strSQL & "FROM "
+                                        strSQL = strSQL & "tblOutboundTotal" & "_" & Format(m_lngUserID, "00") & " INNER JOIN ("
+                                        strSQL = strSQL & "HistoryOutboundDocs INNER JOIN ("
+                                        strSQL = strSQL & "tblOutbounds" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & " INNER JOIN ("
+                                        strSQL = strSQL & "tblInboundsNoNullAllYears" & "_" & Format(m_lngUserID, "00") & " INNER JOIN ("
+                                        strSQL = strSQL & "StockCards INNER JOIN Products "
+                                        strSQL = strSQL & "ON StockCards.Prod_ID = Products.Prod_ID) "
+                                        strSQL = strSQL & "ON tblInboundsNoNullAllYears" & "_" & Format(m_lngUserID, "00") & ".Stock_ID = StockCards.Stock_ID) "
+                                        strSQL = strSQL & "ON tblOutbounds" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".In_ID = tblInboundsNoNullAllYears" & "_" & Format(m_lngUserID, "00") & ".In_ID) "
+                                        strSQL = strSQL & "ON HistoryOutboundDocs.OutDoc_ID = tblOutbounds" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".OutDoc_ID) "
+                                        strSQL = strSQL & "ON tblOutboundTotal" & "_" & Format(m_lngUserID, "00") & ".Doc_ID = tblOutbounds" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".OutDoc_ID "
+                                        strSQL = strSQL & "AND "
+                                        strSQL = strSQL & "tblOutboundTotal" & "_" & Format(m_lngUserID, "00") & ".Source_In_ID = tblOutbounds" & Format(intYearCtr, "00") & "_" & Format(m_lngUserID, "00") & ".Out_Source_In_ID "
+                                        strSQL = strSQL & IIf(mlngProdHandling = 0, " AND tblOutboundTotal" & "_" & Format(m_lngUserID, "00") & ".Packages_Type = tblInboundsNoNullAllYears" & "_" & Format(m_lngUserID, "00") & ".In_Orig_Packages_Type", "") & " "
+                                        strSQL = strSQL & "WHERE "
+                                        strSQL = strSQL & "Products.Entrepot_ID = " & mlngFilterID & " "
+                                        strSQL = strSQL & "AND "
+                                        strSQL = strSQL & "StockCards.Prod_ID = " & mlngProdID & " "
+                                        strSQL = strSQL & "AND "
+                                        strSQL = strSQL & "tblInboundsNoNullAllYears" & "_" & Format(m_lngUserID, "00") & ".Stock_ID = " & mlngStockID & " "
+                                        strSQL = strSQL & "AND "
+                                        strSQL = strSQL & "DateValue(HistoryOutboundDocs.OutDoc_Date) BETWEEN DateValue('" & mdtmPeriodFrom & "') AND DateValue('" & mdtmPeriodTo & "')"
+                                        
+                                End Select
+                                
+                                'strSQL = Replace(strSQL, "HistoryInbounds", "HistoryInbounds" & right(intYearCtr,2))
+                                strSQL = Replace(strSQL, "HistoryOutboundDocs", "HistoryOutboundDocs" & Right(intYearCtr, 2))
+505                             ExecuteNonQuery mconSADBEL, strSQL
+'505                             mconSADBEL.Execute strSQL
+                            End If
+                        Next intYearCtr
+                        
+                        mconSADBEL.Close
+                        mconSADBEL.Open
+                        
+510                     strSQL = vbNullString
+                        strSQL = strSQL & "SELECT "
+                        strSQL = strSQL & "* "
+                        strSQL = strSQL & "FROM "
+                        strSQL = strSQL & "tblPrevMovements" & "_" & Format(m_lngUserID, "00") & " "
+                        strSQL = strSQL & "ORDER BY "
+                        strSQL = strSQL & "Doc_Date"
+                        strSQL = strSQL & IIf(mlngProdHandling = 0, ", Packages_Type", "") & ", "
+                        strSQL = strSQL & "Job_Num, "
+                        strSQL = strSQL & "Batch_Num"
+                        
+                        On Error Resume Next
+                        
+520                     ADORecordsetOpen strSQL, mconSADBEL, mrstMovements, adOpenKeyset, adLockOptimistic
+'520                     mrstMovements.Open strSQL, mconSADBEL, adOpenForwardOnly, adLockReadOnly
+                        
+525                     If (Err.Number = 0) Then
+                            ' Do nothing.
+530                     ElseIf (Err.Number = -2147217865) Then    ' [The Microsoft database engine cannot find the input table or query 'tblPrevMovements'. Make sure it exists and that its name is spelled correctly.]
+535                         Err.Clear
+                            
+                            ' Create dummy tblPrevMovements table whose record pointer is at EOF
+540                             strSQL = "SELECT DISTINCT Null AS fldPrevMovements INTO tblPrevMovements" & "_" & Format(m_lngUserID, "00") & " FROM Inbounds"
+545                         ExecuteNonQuery mconSADBEL, strSQL
+'545                         mconSADBEL.Execute strSQL, , adExecuteNoRecords
+                            
+550                             strSQL = "DELETE fldPrevMovements FROM tblPrevMovements" & "_" & Format(m_lngUserID, "00") & " "
+555                         ExecuteNonQuery mconSADBEL, strSQL
+'555                         mconSADBEL.Execute strSQL, , adExecuteNoRecords
+                            
+560                             strSQL = "SELECT * FROM tblPrevMovements" & "_" & Format(m_lngUserID, "00") & " "
+565                         ADORecordsetOpen strSQL, mconSADBEL, mrstMovements, adOpenKeyset, adLockOptimistic
+'565                         mrstMovements.Open strSQL, mconSADBEL, adOpenForwardOnly, adLockReadOnly
+                            
+570                         lngErrNumber = Err.Number
+                        Else
+575                         lngErrNumber = Err.Number
+                        End If
+                        
+                        'On Error GoTo 0
+                        On Error GoTo ErrHandler
+                        
+580                     If (lngErrNumber > 0) Then
+585                         Err.Raise lngErrNumber
+                        End If
+                        
+590                     If Not mrstMovements.EOF Then
+595                         fldAuthorizedPartyName.Text = IIf(IsNull(.Fields("Auth_Name").Value), "", Trim(.Fields("Auth_Name").Value))
+                            
+600                         fldAuthorizedPartyAddress.Height = lblA.Top - fldAuthorizedPartyAddress.Top
+                            
+                            ' Omit authorized party country if authorized party name = licensee name
+605                         If StrComp(fldAuthorizedPartyName.Text, mstrLicenseeName, vbTextCompare) = 0 Then
+610                             fldAuthorizedPartyAddress.Text = IIf(IsNull(.Fields("Auth_Address").Value), "", Trim(.Fields("Auth_Address").Value)) & vbCrLf & _
+                                                                 IIf(IsNull(.Fields("Auth_PostalCode").Value), "", Trim(.Fields("Auth_PostalCode").Value)) & " " & IIf(IsNull(.Fields("Auth_City").Value), "", UCase(Trim(.Fields("Auth_City").Value)))
+                                
+615                             If UBound(Split(fldAuthorizedPartyAddress.Text, vbCrLf)) > 2 Then
+620                                 fldAuthorizedPartyAddress.Font.Size = 4
+                                End If
+                            Else
+625                             fldAuthorizedPartyAddress.Text = IIf(IsNull(.Fields("Auth_Address").Value), "", Trim(.Fields("Auth_Address").Value)) & vbCrLf & _
+                                                                 IIf(IsNull(.Fields("Auth_PostalCode").Value), "", Trim(.Fields("Auth_PostalCode").Value)) & " " & IIf(IsNull(.Fields("Auth_City").Value), "", UCase(Trim(.Fields("Auth_City").Value))) & _
+                                                                 vbCrLf & _
+                                                                 IIf(IsNull(.Fields("Auth_Country").Value), "", UCase(Trim(.Fields("Auth_Country").Value)))
+                                
+630                             If UBound(Split(fldAuthorizedPartyAddress.Text, vbCrLf)) > 2 Then
+635                                 fldAuthorizedPartyAddress.Font.Size = 4
+                                End If
+                            End If
+                            
+640                         fldAuthorizedPartyPostCodeCity.Visible = False
+645                         fldAuthorizedPartyCountry.Visible = False
+                            
+650                         fldProductNum.Text = IIf(IsNull(.Fields("Prod_Num").Value), "", UCase(Trim(.Fields("Prod_Num").Value)))
+655                         fldEntrepotType.Text = IIf(IsNull(.Fields("Entrepot_Type").Value), "", UCase(Trim(.Fields("Entrepot_Type").Value)))
+660                         fldEntrepotNum.Text = IIf(IsNull(.Fields("Entrepot_Num").Value), "", Trim(.Fields("Entrepot_Num").Value))
+665                         fldPeriodFrom.Text = mdtmPeriodFrom
+670                         fldPeriodTo.Text = mdtmPeriodTo
+                            
+675                         fldStockCardNum.Text = IIf(IsNull(.Fields("Stock_Card_Num").Value), "", Trim(.Fields("Stock_Card_Num").Value))
+                            
+
+680                         fldGoodsDescription.Text = IIf(IsNull(.Fields("Prod_Desc").Value), "", UCase(Trim(.Fields("Prod_Desc").Value)))
+685                         fldMarksNumbers.Text = ""
+                            'fldMarksNumbers.Text = IIf(IsNull(.Fields("Prod_Marks_Numbers").Value), "", Trim(.Fields("Prod_Marks_Numbers").Value))
+690                         fldTARICCode.Text = IIf(IsNull(.Fields("Taric_Code").Value), "", Trim(.Fields("Taric_Code").Value))
+                            
+695                         fldImportCountryCode.Text = IIf(IsNull(.Fields("Prod_Ctry_Export").Value), "", Trim(.Fields("Prod_Ctry_Export").Value))
+700                         fldOriginCountryCode.Text = IIf(IsNull(.Fields("Prod_Ctry_Origin").Value), "", Trim(.Fields("Prod_Ctry_Origin").Value))
+                            
+705                         strSQL = "SELECT [BOX CODE], [DESCRIPTION DUTCH] FROM [PICKLIST DEFINITION]" & _
+                                     " INNER JOIN [PICKLIST MAINTENANCE DUTCH] ON [PICKLIST DEFINITION].[INTERNAL CODE] = [PICKLIST MAINTENANCE DUTCH].[INTERNAL CODE]" & _
+                                     " WHERE DOCUMENT = 'Import' AND (([BOX CODE] = 'C1' AND CODE = '" & fldOriginCountryCode.Text & "')" & _
+                                     " OR ([BOX CODE] = 'C2' AND CODE = '" & fldImportCountryCode.Text & "'))" & _
+                                     " ORDER BY [BOX CODE]"
+715                         ADORecordsetOpen strSQL, mconSADBEL, rstCountryNames, adOpenKeyset, adLockOptimistic
+'715                         rstCountryNames.Open strSQL, mconSADBEL, adOpenForwardOnly, adLockReadOnly
+                            
+720                         With rstCountryNames
+                                If Not (.EOF And .BOF) Then
+                                    .MoveFirst
+725                                 Do Until .EOF
+730                                     If .Fields("BOX CODE").Value = "C1" Then
+735                                         fldOriginCountryName.Text = IIf(IsNull(.Fields("Description Dutch").Value), "", Trim(.Fields("Description Dutch").Value))
+740                                     ElseIf .Fields("BOX CODE").Value = "C2" Then
+745                                         fldImportCountryName.Text = IIf(IsNull(.Fields("Description Dutch").Value), "", Trim(.Fields("Description Dutch").Value))
+                                        Else
+750                                         fldOriginCountryCode.Text = ""
+755                                         fldImportCountryName.Text = ""
+                                        End If
+                                    
+760                                     .MoveNext
+                                    Loop
+                                End If
+                            End With
+                            
+770                         ADORecordsetClose rstCountryNames
+                        End If
+                        
+775                     .MoveNext
+                    Else
+                        Exit Do
+                    End If
+                End If
+            ' If there are no documents to display under the current stock card and there are more stock cards left,
+            ' loop and retrieve the next stock card
+780         Loop While mrstMovements.EOF And Not mrstStockCardOff.EOF
+            
+785         If mlngStockID <> mlngPrevStockID Then
+                ' If there are no documents to display under the current stock card and it's already the last page
+                ' because there are no more stock cards left, suppress the last page by hiding its sections
+790             If mrstMovements.EOF And mrstStockCardOff.EOF Then
+795                 If mlngPrevStockID = 0 Then
+800                     MsgBox "No stock for this stock card.", vbOKOnly + vbExclamation, "Summary Reports"
+                    End If
+                    
+805                 PageHeader.Visible = False
+810                 Detail.Visible = False
+815                 PageFooter.Visible = False
+                Else
+820                 Set mcolPackageTypeCodes = New Collection
+825                 Set mcolPackageTypeDescriptions = New Collection
+830                 Set mcolSubtotalPackagesQtyWgt = New Collection
+                    
+835                 If mlngProdHandling = 0 Then
+840                     strSQL = "SELECT Packages_Type, [DESCRIPTION DUTCH] FROM tblPrevMovements" & "_" & Format(m_lngUserID, "00") & " INNER JOIN ([PICKLIST DEFINITION] INNER JOIN [PICKLIST MAINTENANCE DUTCH]" & _
+                                 " ON [PICKLIST DEFINITION].[INTERNAL CODE] = [PICKLIST MAINTENANCE DUTCH].[INTERNAL CODE])" & _
+                                 " ON tblPrevMovements" & "_" & Format(m_lngUserID, "00") & ".Packages_Type = [PICKLIST MAINTENANCE DUTCH].CODE" & _
+                                 " WHERE DOCUMENT = 'Import' AND [BOX CODE] = 'E3' UNION" & _
+                                 " SELECT Packages_Type, [DESCRIPTION DUTCH] FROM tblInboundTotal" & "_" & Format(m_lngUserID, "00") & " INNER JOIN ([PICKLIST DEFINITION] INNER JOIN [PICKLIST MAINTENANCE DUTCH]" & _
+                                 " ON [PICKLIST DEFINITION].[INTERNAL CODE] = [PICKLIST MAINTENANCE DUTCH].[INTERNAL CODE])" & _
+                                 " ON tblInboundTotal" & "_" & Format(m_lngUserID, "00") & ".Packages_Type = [PICKLIST MAINTENANCE DUTCH].CODE" & _
+                                 " WHERE DOCUMENT = 'Import' AND [BOX CODE] = 'E3' UNION" & _
+                                 " SELECT Packages_Type, [DESCRIPTION DUTCH] FROM tblOutboundTotal" & "_" & Format(m_lngUserID, "00") & " INNER JOIN ([PICKLIST DEFINITION] INNER JOIN [PICKLIST MAINTENANCE DUTCH]" & _
+                                 " ON [PICKLIST DEFINITION].[INTERNAL CODE] = [PICKLIST MAINTENANCE DUTCH].[INTERNAL CODE])" & _
+                                 " ON tblOutboundTotal" & "_" & Format(m_lngUserID, "00") & ".Packages_Type = [PICKLIST MAINTENANCE DUTCH].CODE" & _
+                                 " WHERE DOCUMENT = 'Import' AND [BOX CODE] = 'E3'" & _
+                                 " ORDER BY Packages_Type"
+                        
+850                     ADORecordsetOpen strSQL, mconSADBEL, rstCountryNames, adOpenKeyset, adLockOptimistic
+'850                     rstCountryNames.Open strSQL, mconSADBEL, adOpenForwardOnly, adLockReadOnly
+                        
+855                     With rstCountryNames
+                            If Not (.EOF And .BOF) Then
+                                .MoveFirst
+860                             Do Until .EOF
+                                    On Error Resume Next
+                                
+865                                 mcolPackageTypeCodes.Add IIf(IsNull(.Fields("Packages_Type").Value), "", UCase(Trim(.Fields("Packages_Type").Value))), UCase(Trim(.Fields("Packages_Type").Value))
+870                                 mcolPackageTypeDescriptions.Add IIf(IsNull(.Fields("Description Dutch").Value), UCase(Trim(.Fields("Packages_Type").Value)), Trim(.Fields("Description Dutch").Value)), UCase(Trim(.Fields("Packages_Type").Value))
+875                                 mcolSubtotalPackagesQtyWgt.Add CDbl(0), UCase(Trim(.Fields("Packages_Type").Value))
+                                
+880                                 If Err.Number = 0 Then
+                                        ' Do nothing.
+885                                 ElseIf Err.Number = 457 Then    ' [This key is already associated with an element of this collection.]
+                                        ' Do nothing.
+                                    Else
+890                                     lngErrNumber = Err.Number
+                                    End If
+                                
+                                    On Error GoTo ErrHandler
+                                
+895                                 If lngErrNumber > 0 Then
+900                                     Err.Raise lngErrNumber
+                                    End If
+                                
+905                                 .MoveNext
+                                Loop
+                            End If
+                        End With
+                        
+915                     ADORecordsetClose rstCountryNames
+                    Else
+920                     mcolPackageTypeCodes.Add "KG", "KG"
+925                     mcolSubtotalPackagesQtyWgt.Add CDbl(0), "KG"
+                    End If
+                    
+930                 mdblRunningTotal = 0
+                End If
+            End If
+        End With
+    End If
+    
+935 mlngCurrRowNum = 0
+    
+940 fldCol12.Font.Bold = False
+945 fldCol13.Font.Bold = False
+    
+950 Line43.Visible = False    ' Hide totals separator line
+955 Line25.Visible = False    ' Hide bottom line of all rows
+    
+960 Detail.NewPage = ddNPNone
+    
+    
+    Exit Sub
+    
+ErrHandler:
+    
+    MsgBox Err.Description, vbOKOnly + vbExclamation, Err.Source & " (" & Err.Number & ", " & Erl & ")"
+End Sub
+
+
+Private Sub Detail_Format()
+    
+    Dim strDocType As String
+    Dim strDocNum As String
+    Dim strDocMRN As String
+    Dim strCommSettlement As String
+    Dim arrCommSettlement(0 To 1) As String
+    
+    Static strPrevSeqNum As String
+    Dim strNextSeqNum As String
+    
+    Static strPrevDocTypeNum As String
+    Dim strNextDocTypeNum As String
+    
+    Static strPrevDocDate As String
+    Dim strNextDocDate As String
+    
+    Static strPrevPackagesType As String
+    Dim strNextPackagesType As String
+    
+    Static strPrevJobBatchNum As String
+    Dim strNextJobBatchNum As String
+    
+    Dim strNextTotalPackagesQtyWgt As String
+    Dim strPackageTypeDesc As String
+        
+    Dim lngCtr As Long
+    Dim lngSourceInID As Long
+    Dim bytDocManual As Byte
+    Dim bytNCTSType As Byte
+    
+    Dim dblInboundQtyWgt As Double
+    Dim dblOutboundQtyWgt As Double
+    Dim dblRunningSubtotal As Double
+    
+    
+    Dim blnRepackagedStock As Boolean
+    Dim blnCancelledStock As Boolean
+    Static blnReplacementStock As Boolean
+    
+    Dim rstClosure As ADODB.Recordset 'rachelle : for closure 092705
+    Dim strClosure As String 'rachelle : for closure 092705
+    Dim strSum() As String 'rachelle : for closure 092705
+    Dim lngTempCounter As Long 'rachelle : for closure 092705
+    Dim strTotalSum As String 'rachelle : for closure 092705
+    Dim blnExit As Boolean
+    
+    Dim blnPLDAMovement As Boolean
+    Dim strTemporaryDocumentNumber As String
+    
+    Static intPackagesTypeCtr As Integer
+    Static lngReopening As Long
+    
+    'On Error GoTo ErrHandler
+    
+'    Canvas.PenWidth = 3
+60    fldCol1.Text = ""
+70    fldCol2.Text = ""
+80    fldCol3.Text = ""
+90    fldCol4.Text = ""
+100   fldCol5.Text = ""
+110   fldCol6.Text = ""
+120   fldCol7.Text = ""
+130   fldCol8.Text = ""
+140   fldCol9.Text = ""
+150   fldCol10.Text = ""
+160   fldCol11.Text = ""
+170   fldCol12.Text = ""
+180   fldCol13.Text = ""
+190   fldCol14.Text = ""
+    
+200       blnExit = False
+    ' Reset static variables for the first page of every new stock card so that the first values for SeqNum, DocTypeNum, DocDate, and PackagesType
+    ' on the new page will not be compared against the last values from the previous page
+210   If mlngCurrRowNum = 0 And mlngStockID <> mlngPrevStockID Then
+220     strPrevSeqNum = ""
+230     strPrevDocTypeNum = ""
+240     strPrevDocDate = ""
+250     strPrevPackagesType = ""
+260     strPrevJobBatchNum = ""
+270     intPackagesTypeCtr = 0
+        
+280     mlngPrevStockID = mlngStockID
+        
+290     strDocNames = ""
+300     strDocNumForClosure = ""
+310     blnJustAfterClosure = False
+320     blnToAddLine = False
+    
+330       End If
+    
+    '****************************************************************************************
+    'CSCLP-344
+    '****************************************************************************************
+340 If (m_blnRecordEOF = True) And (mrstMovements.EOF = True) Then
+350     If mlngStockID = mlngPrevStockID Then
+360         If mlngCurrRowNum <= 69 And m_blnNoData = True Then
+370             mlngCurrRowNum = mlngCurrRowNum + 1
+380             Detail.PrintSection
+390             Exit Sub
+400         ElseIf mlngCurrRowNum > 69 And m_blnNoData = True Then
+410             blnJustAfterClosure = False
+420             m_blnNoData = False
+430             Exit Sub
+440         End If
+450     End If
+460 End If
+    '****************************************************************************************
+    
+470   With mrstMovements
+480     If Not .EOF Then
+490         blnPLDAMovement = False
+            
+500         strDocType = IIf(IsNull(.Fields("Doc_Type").Value), "", Trim(.Fields("Doc_Type").Value))
+510         Select Case UCase$(Trim$(strDocType))
+                Case "IMJ", _
+                        "IMK"
+
+520                 blnPLDAMovement = True
+
+                    'strDocType = "IM7"
+530         End Select
+            
+            
+540         strCommSettlement = IIf(IsNull(.Fields("Comm_Settlement").Value), "", Trim(.Fields("Comm_Settlement").Value))
+            
+550         arrCommSettlement(0) = Left$(strCommSettlement, 2)
+560         arrCommSettlement(1) = Right$(strCommSettlement, 2)
+                                   
+            Dim rstGetCommSettlement As ADODB.Recordset
+            Dim strCommand As String
+            
+570         If Trim$(arrCommSettlement(0)) = "" Or Trim$(arrCommSettlement(1)) = "" Then
+                ' To Do: Must check for the reason why these become empty
+                
+580             strCommand = ""
+590             strCommand = strCommand & "SELECT TOP 1 "
+                                
+600             Select Case UCase$(Trim$(strDocType))
+                    Case "EXA", "EXB", "EXC", "EXD", "EXE", "EXF", "EXG", _
+                            "ACA", "ACB", "ACC", "ACD", "ACE", "ACF", "ACG", _
+                            "EUA", "EUB", "EUC", "EUD", "EUE", "EUF", "EUG", _
+                            "COA", "COB", "COC", "COD", "COE", "COF", "COG"
+                            
+610                     strCommand = strCommand & "[PLDA COMBINED DETAIL].[N1] AS [N1], "
+620                     strCommand = strCommand & "[PLDA COMBINED DETAIL].[N2] AS [N2] "
+630                     strCommand = strCommand & "FROM "
+640                     strCommand = strCommand & "[PLDA COMBINED HEADER] INNER JOIN [PLDA COMBINED DETAIL] ON "
+650                     strCommand = strCommand & "[PLDA COMBINED HEADER].[CODE] = [PLDA COMBINED DETAIL].[CODE] "
+660                     strCommand = strCommand & "WHERE "
+670                     strCommand = strCommand & "[PLDA COMBINED HEADER].[DOC NUMBER] = '" & IIf(IsNull(.Fields("Doc_Num").Value), "", Trim(.Fields("Doc_Num").Value)) & "' "
+680                     strCommand = strCommand & "AND "
+690                     strCommand = strCommand & "[PLDA COMBINED DETAIL].[DETAIL] = 1 "
+                        
+700                 Case "IMH", "IMI", "IMJ", "IMK", _
+                            "ACH", "ACI", "ACJ", "ACK", _
+                            "EUH", "EUI", "EUJ", "EUK", _
+                            "COH", "COI", "COJ", "COK"
+                            
+710                     strCommand = strCommand & "[PLDA IMPORT DETAIL].[N1] AS [N1], "
+720                     strCommand = strCommand & "[PLDA IMPORT DETAIL].[N2] AS [N2] "
+730                     strCommand = strCommand & "FROM "
+740                     strCommand = strCommand & "[PLDA IMPORT HEADER] INNER JOIN [PLDA IMPORT DETAIL] ON "
+750                     strCommand = strCommand & "[PLDA IMPORT HEADER].[CODE] = [PLDA IMPORT DETAIL].[CODE] "
+760                     strCommand = strCommand & "WHERE "
+770                     strCommand = strCommand & "[PLDA IMPORT HEADER].[DOC NUMBER] = '" & IIf(IsNull(.Fields("Doc_Num").Value), "", Trim(.Fields("Doc_Num").Value)) & "' "
+780                     strCommand = strCommand & "AND "
+790                     strCommand = strCommand & "[PLDA IMPORT DETAIL].[DETAIL] = 1 "
+                                
+800                 Case Else
+                        ' Do Nothing
+810             End Select
+                
+820             Select Case UCase$(Trim$(strDocType))
+                    Case "EXA", "EXB", "EXC", "EXD", "EXE", "EXF", "EXG", _
+                            "ACA", "ACB", "ACC", "ACD", "ACE", "ACF", "ACG", _
+                            "EUA", "EUB", "EUC", "EUD", "EUE", "EUF", "EUG", _
+                            "COA", "COB", "COC", "COD", "COE", "COF", "COG", _
+                            "IMH", "IMI", "IMJ", "IMK", _
+                            "ACH", "ACI", "ACJ", "ACK", _
+                            "EUH", "EUI", "EUJ", "EUK", _
+                            "COH", "COI", "COJ", "COK"
+                        
+                        
+830                     ADORecordsetOpen strCommand, mconSADBEL, rstGetCommSettlement, adOpenKeyset, adLockOptimistic
+840                     If Not (rstGetCommSettlement.EOF And rstGetCommSettlement.BOF) Then
+850                         rstGetCommSettlement.MoveFirst
+                                    
+860                         arrCommSettlement(0) = IIf(IsNull(rstGetCommSettlement.Fields("N1").Value), "", rstGetCommSettlement.Fields("N1").Value)
+870                         arrCommSettlement(1) = IIf(IsNull(rstGetCommSettlement.Fields("N2").Value), "", rstGetCommSettlement.Fields("N2").Value)
+880                     End If
+890                     ADORecordsetClose rstGetCommSettlement
+                
+900                 Case Else
+                        ' Do Nothing
+910             End Select
+920         End If
+            
+930         strNextSeqNum = .Fields("Seq_Num").Value
+940         strNextTotalPackagesQtyWgt = .Fields("Total_Packages_Qty_Wgt").Value
+            
+950         If UCase(Right(.Fields("Job_Num").Value, 10)) = "RE-OPENING" And blnJustAfterClosure = False Then
+960             blnExit = True
+970             GoTo Continue
+980         End If
+            
+990         If blnJustAfterClosure = True Then
+                
+                'Get Re-opening
+
+1010            strClosure = vbNullString
+1020            strClosure = strClosure & "SELECT "
+1030            strClosure = strClosure & "* "
+1040            strClosure = strClosure & "FROM "
+1050            strClosure = strClosure & "TBLPREVMOVEMENTS" & "_" & Format(m_lngUserID, "00") & " "
+1060            strClosure = strClosure & "WHERE "
+'1070            strClosure = strClosure & "DOC_NUM = '" & Left(Right(strDocNames, 8), 7) & "' "
+                '****************************************************************************************
+                'CSCLP-344 - strDocNames should always have value, otherwise there is a problem elsewhere
+                '****************************************************************************************
+'1065            If Len(strDocNames) = 20 Then
+'1066                strClosure = strClosure & "DOC_NUM = '" & Left(Right(strDocNames, 19), 18) & "' "
+'1067            ElseIf Len(strDocNames) = 9 Then
+'1068                strClosure = strClosure & "DOC_NUM = '" & Left(Right(strDocNames, 8), 7) & "' "
+'1070            End If
+1070            strClosure = strClosure & "DOC_NUM = '" & m_strCurrDocNum & "' "
+                '****************************************************************************************
+1080            strClosure = strClosure & "AND "
+1090            strClosure = strClosure & "( "
+1100            strClosure = strClosure & "DOC_TYPE = 'IM7' "
+1110            strClosure = strClosure & "OR "
+1120                strClosure = strClosure & "( "
+1130                    strClosure = strClosure & "( "
+1140                    strClosure = strClosure & "DOC_TYPE = 'EXA' "
+1150                    strClosure = strClosure & "OR "
+1160                    strClosure = strClosure & "DOC_TYPE = 'EXB' "
+1170                    strClosure = strClosure & "OR "
+1180                    strClosure = strClosure & "DOC_TYPE = 'EXC' "
+1190                    strClosure = strClosure & "OR "
+1200                    strClosure = strClosure & "DOC_TYPE = 'EXD' "
+1210                    strClosure = strClosure & "OR "
+1220                    strClosure = strClosure & "DOC_TYPE = 'EXE' "
+1230                    strClosure = strClosure & "OR "
+1240                    strClosure = strClosure & "DOC_TYPE = 'EXF' "
+1250                    strClosure = strClosure & "OR "
+1260                    strClosure = strClosure & "DOC_TYPE = 'EXG' "
+1270                    strClosure = strClosure & "OR "
+
+' --------------------------------------------------------------------------------------------
+' START:   THIS MIGHT NEED TO BE UNCOMMENTED IN THE FUTURE. WILL CLARIFY WHEN THE TIME COMES
+' --------------------------------------------------------------------------------------------
+'1140                    strClosure = strClosure & "DOC_TYPE = 'EXA' "
+'1150                    strClosure = strClosure & "OR "
+'1160                    strClosure = strClosure & "DOC_TYPE = 'EXB' "
+'1170                    strClosure = strClosure & "OR "
+'1180                    strClosure = strClosure & "DOC_TYPE = 'EXC' "
+'1190                    strClosure = strClosure & "OR "
+'1200                    strClosure = strClosure & "DOC_TYPE = 'EXD' "
+'1210                    strClosure = strClosure & "OR "
+'1220                    strClosure = strClosure & "DOC_TYPE = 'EXE' "
+'1230                    strClosure = strClosure & "OR "
+'1240                    strClosure = strClosure & "DOC_TYPE = 'EXF' "
+'1250                    strClosure = strClosure & "OR "
+'1260                    strClosure = strClosure & "DOC_TYPE = 'EXG' "
+'1270                    strClosure = strClosure & "OR "
+'
+'
+'1140                    strClosure = strClosure & "DOC_TYPE = 'EXA' "
+'1150                    strClosure = strClosure & "OR "
+'1160                    strClosure = strClosure & "DOC_TYPE = 'EXB' "
+'1170                    strClosure = strClosure & "OR "
+'1180                    strClosure = strClosure & "DOC_TYPE = 'EXC' "
+'1190                    strClosure = strClosure & "OR "
+'1200                    strClosure = strClosure & "DOC_TYPE = 'EXD' "
+'1210                    strClosure = strClosure & "OR "
+'1220                    strClosure = strClosure & "DOC_TYPE = 'EXE' "
+'1230                    strClosure = strClosure & "OR "
+'1240                    strClosure = strClosure & "DOC_TYPE = 'EXF' "
+'1250                    strClosure = strClosure & "OR "
+'1260                    strClosure = strClosure & "DOC_TYPE = 'EXG' "
+'1270                    strClosure = strClosure & "OR "
+'
+'1140                    strClosure = strClosure & "DOC_TYPE = 'EXA' "
+'1150                    strClosure = strClosure & "OR "
+'1160                    strClosure = strClosure & "DOC_TYPE = 'EXB' "
+'1170                    strClosure = strClosure & "OR "
+'1180                    strClosure = strClosure & "DOC_TYPE = 'EXC' "
+'1190                    strClosure = strClosure & "OR "
+'1200                    strClosure = strClosure & "DOC_TYPE = 'EXD' "
+'1210                    strClosure = strClosure & "OR "
+'1220                    strClosure = strClosure & "DOC_TYPE = 'EXE' "
+'1230                    strClosure = strClosure & "OR "
+'1240                    strClosure = strClosure & "DOC_TYPE = 'EXF' "
+'1250                    strClosure = strClosure & "OR "
+'1260                    strClosure = strClosure & "DOC_TYPE = 'EXG' "
+'1270                    strClosure = strClosure & "OR "
+'
+'1280                    strClosure = strClosure & "DOC_TYPE = 'IMH' "
+'1290                    strClosure = strClosure & "OR "
+'1300                    strClosure = strClosure & "DOC_TYPE = 'IMI' "
+'1310                    strClosure = strClosure & "OR "
+'1320                    strClosure = strClosure & "DOC_TYPE = 'IMJ' "
+'1330                    strClosure = strClosure & "OR "
+'1340                    strClosure = strClosure & "DOC_TYPE = 'IMK' "
+'1290                    strClosure = strClosure & "OR "
+'
+'1280                    strClosure = strClosure & "DOC_TYPE = 'IMH' "
+'1290                    strClosure = strClosure & "OR "
+'1300                    strClosure = strClosure & "DOC_TYPE = 'IMI' "
+'1310                    strClosure = strClosure & "OR "
+'1320                    strClosure = strClosure & "DOC_TYPE = 'IMJ' "
+'1330                    strClosure = strClosure & "OR "
+'1340                    strClosure = strClosure & "DOC_TYPE = 'IMK' "
+'1290                    strClosure = strClosure & "OR "
+'
+'1280                    strClosure = strClosure & "DOC_TYPE = 'IMH' "
+'1290                    strClosure = strClosure & "OR "
+'1300                    strClosure = strClosure & "DOC_TYPE = 'IMI' "
+'1310                    strClosure = strClosure & "OR "
+'1320                    strClosure = strClosure & "DOC_TYPE = 'IMJ' "
+'1330                    strClosure = strClosure & "OR "
+'1340                    strClosure = strClosure & "DOC_TYPE = 'IMK' "
+'1290                    strClosure = strClosure & "OR "
+' --------------------------------------------------------------------------------------------
+' END:   THIS MIGHT NEED TO BE UNCOMMENTED IN THE FUTURE. WILL CLARIFY WHEN THE TIME COMES
+' --------------------------------------------------------------------------------------------
+
+1280                    strClosure = strClosure & "DOC_TYPE = 'IMH' "
+1290                    strClosure = strClosure & "OR "
+1300                    strClosure = strClosure & "DOC_TYPE = 'IMI' "
+1310                    strClosure = strClosure & "OR "
+1320                    strClosure = strClosure & "DOC_TYPE = 'IMJ' "
+1330                    strClosure = strClosure & "OR "
+1340                    strClosure = strClosure & "DOC_TYPE = 'IMK' "
+1350                    strClosure = strClosure & ") "
+1360                    strClosure = strClosure & "AND "
+1370                    strClosure = strClosure & "LEFT(Comm_Settlement, 2) = '71' "
+1380                strClosure = strClosure & ") "
+1390            strClosure = strClosure & ") "
+1400            ADORecordsetOpen strClosure, mconSADBEL, rstClosure, adOpenKeyset, adLockOptimistic
+'1400            rstClosure.Open strClosure, mconSADBEL, adOpenKeyset, adLockReadOnly
+
+1410            If rstClosure.BOF And rstClosure.EOF Then
+1420                ADORecordsetClose rstClosure
+
+1440                blnJustAfterClosure = False
+                    
+                    '****************************************************************************************
+                    'CSCLP-344
+                    '****************************************************************************************
+1450                mlngCurrRowNum = mlngCurrRowNum + 1
+1452                Detail.PrintSection
+1453                m_blnNoData = True
+                    '****************************************************************************************
+                    
+                    Exit Sub
+1460            Else
+                    'lagay na natin sa report!
+1470                With rstClosure
+                            .MoveFirst
+                            
+1480                        If lngReopening = 0 Then
+1490                            'Me.Canvas.DrawLine Me.PageLeftMargin, Me.PageTopMargin + (Detail.Height * (lngDetailCounter)) + PageHeader.Height - 20, Me.Width + Me.PageLeftMargin, Me.PageTopMargin + (Detail.Height * (lngDetailCounter)) + PageHeader.Height - 20
+                                Me.Canvas.DrawLine Me.PageSettings.LeftMargin, Me.PageSettings.TopMargin + (Detail.Height * (lngDetailCounter)) + PageHeader.Height - 20, Me.Width + Me.PageSettings.LeftMargin, Me.PageSettings.TopMargin + (Detail.Height * (lngDetailCounter)) + PageHeader.Height - 20
+1500                        End If
+                            
+1510                        If lngReopening + 1 <= mcolSubtotalPackagesQtyWgt.Count Then
+1520                            If mcolPackageTypeCodes(lngReopening + 1) <> "**" Then
+1530                                fldCol1.Text = .Fields("Seq_Num").Value
+1540                                fldCol2.Text = mcolSubtotalPackagesQtyWgt(mcolPackageTypeCodes(lngReopening + 1)) & " " & mcolPackageTypeCodes(lngReopening + 1)
+        
+1550                                strTemporaryDocumentNumber = IIf(IsNull(.Fields("Doc_Num").Value), "", .Fields("Doc_Num").Value)
+1560                                strTemporaryDocumentNumber = Trim$(strTemporaryDocumentNumber)
+1570                                Select Case Len(strTemporaryDocumentNumber)
+                                        Case Is <= 8
+                                            ' SADBEL
+1580                                        strTemporaryDocumentNumber = "S" & strTemporaryDocumentNumber
+            
+1590                                    Case Else
+                                            ' Non-SADBEL
+                                            ' Do Nothing
+1600                                End Select
+1610                                strTemporaryDocumentNumber = " " & strTemporaryDocumentNumber
+                                    
+1620                                fldCol3.Text = .Fields("Doc_Type").Value & strTemporaryDocumentNumber & " " & Format(.Fields("Doc_Date").Value, "Short Date")
+
+                                    'fldCol3.Text = .Fields("Doc_Type").Value & " S" & .Fields("Doc_Num").Value & " " & Format(.Fields("Doc_Date").Value, "Short Date")
+1630                                fldCol14.Text = .Fields("Job_Num").Value
+1640                                fldCol14.Font.Bold = True
+1650                                dblInboundQtyWgt = mcolSubtotalPackagesQtyWgt(mcolPackageTypeCodes(lngReopening + 1))
+1660                                dblOutboundQtyWgt = 0
+1670                                mdblRunningTotal = mdblRunningTotal + dblInboundQtyWgt
+                                    
+1680                                dblRunningSubtotal = dblInboundQtyWgt
+                                    
+        '                            mcolSubtotalPackagesQtyWgt.Remove .Fields("Packages_Type").Value
+        '                            mcolSubtotalPackagesQtyWgt.Add dblRunningSubtotal, .Fields("Packages_Type").Value
+                                    
+1690                                fldCol13.Text = mdblRunningTotal
+                                    
+1700                                mlngCurrRowNum = mlngCurrRowNum + 1
+                                    
+1710                                lngDetailCounter = mlngCurrRowNum
+1720                            End If
+1730                        End If
+                            
+1740                        If lngReopening + 1 < mcolSubtotalPackagesQtyWgt.Count Then
+1750                            Me.LayoutAction = ddLAPrintSection + ddLAMoveLayout + ddLANextRecord
+1760                            Detail.PrintSection
+1770                            lngReopening = lngReopening + 1
+1780                            .Close
+1790                            Set rstClosure = Nothing
+1800                            Exit Sub
+1810                        End If
+                            
+1820                        If blnJustAfterClosure = True And lngReopening = 0 Then
+1830                            blnJustAfterClosure = False
+1840                            blnToAddLine = False
+1850                        End If
+1860                        Me.LayoutAction = ddLAPrintSection + ddLAMoveLayout + ddLANextRecord
+1870                        Detail.PrintSection
+                    
+1880                End With
+1890            End If
+                
+1900            lngReopening = 0
+1910            ADORecordsetClose rstClosure
+                
+1930            If UCase(Right(.Fields("Job_Num").Value, 10)) = "RE-OPENING" Then
+1940                If Not .EOF Then
+1950                    .MoveNext
+1960                Else
+1970                    GoTo Continue
+1980                End If
+                    
+1990                If Not .EOF Then
+2000                    strDocType = IIf(IsNull(.Fields("Doc_Type").Value), "", Trim(.Fields("Doc_Type").Value))
+2010                    strCommSettlement = IIf(IsNull(.Fields("Comm_Settlement").Value), "", Trim(.Fields("Comm_Settlement").Value))
+        
+2020                    strNextSeqNum = .Fields("Seq_Num").Value
+2030                    strNextTotalPackagesQtyWgt = .Fields("Total_Packages_Qty_Wgt").Value
+        
+2040                    If UCase(.Fields("Job_Num").Value) = "RE-OPENING" Then
+2050                        blnExit = True
+2060                        GoTo Continue
+2070                    End If
+2080                Else
+2090                    GoTo Continue
+2100                End If
+2110            End If
+                
+2120            blnJustAfterClosure = False
+2130            Exit Sub
+                
+                '-------------------------------------------------------------------------------
+2140        End If
+            
+2150        If strDocType = "XXX" Then
+2160            strDocNumForClosure = IIf(IsNull(.Fields("Doc_Num").Value), "", Trim(.Fields("Doc_Num").Value))
+2170            If InStr(1, strDocNames, strDocNumForClosure) = 0 Then
+2180                strDocNames = strDocNames & "/" & strDocNumForClosure & "/"
+2185                m_strCurrDocNum = strDocNumForClosure
+2190                blnHasbeenShown = False
+2200                blnJustAfterClosure = True
+                    'temp lang
+2210                strNextTotalPackagesQtyWgt = 0
+                    
+                    '-------------------------------------------------------------------------------
+2220            Else
+
+                        'layout yung dito hehe
+2230                blnExit = True
+2240                GoTo Continue
+2250            End If
+2260        End If
+            
+2270        If mlngProdHandling = 0 Then
+2280            strNextPackagesType = IIf(IsNull(.Fields("Packages_Type").Value), "", UCase(Trim(.Fields("Packages_Type").Value)))
+2290            strPackageTypeDesc = strNextPackagesType
+                
+                ' Replace the package type code with the package type description
+                ' strPackageTypeDesc = mcolPackageTypeDescriptions(strNextPackagesType)
+2300        Else
+2310            strNextPackagesType = "KG"
+2320            strPackageTypeDesc = "KG"
+2330        End If
+            
+2340        If strDocType = "BEGINSTOCK" Then
+2350            If mlngCurrRowNum = 0 Then
+2360                fldCol12.Text = "BEGIN STOCK"
+2370                fldCol12.Font.Bold = True
+2380            End If
+                
+2390            fldCol13.Text = strNextTotalPackagesQtyWgt & " " & strPackageTypeDesc
+2400            fldCol13.Font.Bold = True
+                
+2410            dblInboundQtyWgt = Val(strNextTotalPackagesQtyWgt)
+2420        Else
+2430            strDocMRN = IIf(IsNull(.Fields("Doc_MRN").Value), "", Trim(.Fields("Doc_MRN").Value))
+                
+                ' Combined SADBEL NCTS documents have Doc Type and Doc Num but use MRN instead
+2440            If Len(strDocMRN) > 0 And Len(strDocType) > 0 Then
+2450                strDocNum = strDocMRN
+                    
+2460                bytNCTSType = 2
+                ' Pure SADBEL NCTS and EDIFACT NCTS documents neither have Doc Type nor Doc Num; use MRN instead
+2470            ElseIf Len(strDocMRN) > 0 And Len(strDocType) = 0 Then
+2480                strDocNum = strDocMRN
+                    
+2490                bytNCTSType = 1
+2500            Else
+2510                strTemporaryDocumentNumber = IIf(IsNull(.Fields("Doc_Num").Value), "", Trim(.Fields("Doc_Num").Value))
+2520                strTemporaryDocumentNumber = Trim$(strTemporaryDocumentNumber)
+2530                Select Case Len(strTemporaryDocumentNumber)
+                        Case Is <= 8
+                            ' SADBEL
+2540                        strTemporaryDocumentNumber = "S" & strTemporaryDocumentNumber
+ 
+2550                    Case Else
+                            ' Non-SADBEL
+                            ' Do Nothing
+2560                End Select
+2570                strDocNum = " " & strTemporaryDocumentNumber
+'245                 strDocNum = " S" & IIf(IsNull(.Fields("Doc_Num").Value), "", Trim(.Fields("Doc_Num").Value))
+
+                    
+2580                bytNCTSType = 0
+2590            End If
+                
+2600            strNextDocDate = IIf(IsNull(.Fields("Doc_Date").Value), "0", .Fields("Doc_Date").Value)
+                
+2610            lngSourceInID = IIf(IsNull(.Fields("Source_In_ID").Value), 0, .Fields("Source_In_ID").Value)
+                
+2620            bytDocManual = IIf(IsNull(.Fields("Doc_Manual").Value), 0, .Fields("Doc_Manual").Value)
+                
+                
+                ' If there is a SourceInID or the quantity/weight is a negative value,
+                ' then it is repackaged stock and the document date should be preceded by "R"
+2630            If lngSourceInID <> 0 Or Val(strNextTotalPackagesQtyWgt) < 0 Then
+2640                Select Case strDocType
+                        ' Non-PLDA Inbound Documents
+                        ' Modifed by Reims March 7, 2007 based on reply received on email on March 6, 2007
+                        ' regarding "Entrepot Missing Information for Release of CP 4.06.02"
+                        Case "CM7", _
+                            "IM7", _
+                            "EU7"
+
+2650                        If lngSourceInID = -1 Then
+                                ' DIA inbound: If lngSourceInID <> 0 and Val(strNextTotalPackagesQtyWgt) < 0
+2660                            blnRepackagedStock = False
+2670                            blnCancelledStock = True
+                                
+2680                            strNextDocTypeNum = IIf(bytNCTSType = 0, strDocType, "") & strDocNum & " "
+
+                            ' This one's for cancelled documents using the Manual Outbound form rachelle 09/21/05
+2690                        ElseIf lngSourceInID = -2 Then
+                                'IAN
+'                                blnRepackagedStock = False
+'                                blnCancelledStock = True
+                                
+2700                            strNextDocTypeNum = IIf(bytNCTSType = 0, strDocType, "") & strDocNum & " C"
+2710                        Else
+                                ' Repackaged inbound (stock to repackage): If Val(strNextTotalPackagesQtyWgt) < 0
+                                ' Repackaged inbound (repackaged stock): If lngSourceInID <> 0
+2720                            blnRepackagedStock = True
+2730                            blnCancelledStock = False
+                                
+2740                            strNextDocTypeNum = IIf(bytNCTSType = 0, strDocType, "") & strDocNum & " R"
+2750                        End If
+                        
+                        ' PLDA Documents
+                        ' Modifed by Reims March 7, 2007 based on reply received on email on March 6, 2007
+                        ' regarding "Entrepot Missing Information for Release of CP 4.06.02"
+2760                    Case "EXA", "EXB", "EXC", "EXD", "EXE", "EXF", "EXG", "IMH", "IMI", "IMJ", "IMK"
+2770                        If arrCommSettlement(0) = "71" Then
+2780                            If lngSourceInID = -1 Then
+                                    ' DIA inbound: If lngSourceInID <> 0 and Val(strNextTotalPackagesQtyWgt) < 0
+2790                                blnRepackagedStock = False
+2800                                blnCancelledStock = True
+                                
+2810                                strNextDocTypeNum = IIf(bytNCTSType = 0, strDocType, "") & strDocNum & " "
+
+                                ' This one's for cancelled documents using the Manual Outbound form rachelle 09/21/05
+2820                            ElseIf lngSourceInID = -2 Then
+2830                                strNextDocTypeNum = IIf(bytNCTSType = 0, strDocType, "") & strDocNum & " C"
+2840                            Else
+                                    ' Repackaged inbound (stock to repackage): If Val(strNextTotalPackagesQtyWgt) < 0
+                                    ' Repackaged inbound (repackaged stock): If lngSourceInID <> 0
+2850                            blnRepackagedStock = True
+2860                            blnCancelledStock = False
+                                
+2870                            strNextDocTypeNum = IIf(bytNCTSType = 0, strDocType, "") & strDocNum & " R"
+2880                            End If
+2890                        Else
+                                ' DIA outbound: If lngSourceInID <> 0
+                             
+                                ' Added to allow displaying of IM4 outbound corrections
+2900                            If lngSourceInID = -2 Then
+2910                                strNextDocTypeNum = IIf(bytNCTSType = 0, strDocType, "") & strDocNum & " C"
+2920                            Else
+                                    'IAN Moved 2 boolean variable inside the if statement
+2930                                blnRepackagedStock = False
+2940                                blnCancelledStock = True
+2950                                strNextDocTypeNum = IIf(bytNCTSType = 0, strDocType, "") & strDocNum & " "
+2960                            End If
+2970                        End If
+                        
+                        ' Non-PLDA Documents
+2980                    Case Else
+                            ' DIA outbound: If lngSourceInID <> 0
+                             
+                                ' Added to allow displaying of IM4 outbound corrections
+2990                            If lngSourceInID = -2 Then
+3000                                strNextDocTypeNum = IIf(bytNCTSType = 0, strDocType, "") & strDocNum & " C"
+3010                            Else
+                                    'IAN Moved 2 boolean variable inside the if statement
+3020                                blnRepackagedStock = False
+3030                                blnCancelledStock = True
+3040                                strNextDocTypeNum = IIf(bytNCTSType = 0, strDocType, "") & strDocNum & " "
+3050                            End If
+3060                End Select
+3070            Else
+3080                blnRepackagedStock = False
+3090                blnCancelledStock = False
+                    
+3100                If bytDocManual = 0 Then
+3110                    strNextDocTypeNum = IIf(bytNCTSType = 0, strDocType, "") & strDocNum & " "
+3120                Else
+3130                    strNextDocTypeNum = IIf(bytNCTSType = 0, strDocType, "") & strDocNum & " M"
+3140                End If
+3150            End If
+                
+                ' Override blank Doc Type of pure SADBEL NCTS and EDIFACT NCTS documents with 001 for display of quantity in appropriate column
+3160            If bytNCTSType = 1 Then
+3170                strDocType = "001"
+3180            End If
+                
+3190            Select Case strDocType
+                    ' Modifed by Reims March 7, 2007 based on reply received on email on March 6, 2007
+                    ' regarding "Entrepot Missing Information for Release of CP 4.06.02"
+                    'Case "CM7", "IM7", "EU7", _
+                        "IMJ", "IMK"
+                    ' Non-PLDA Inbound Documents
+                    Case "CM7", "IM7", "EU7"
+3200                    If strNextSeqNum <> strPrevSeqNum Or _
+                            strNextPackagesType <> strPrevPackagesType Or _
+                            strNextDocTypeNum & strNextDocDate <> strPrevDocTypeNum & strPrevDocDate Or _
+                            blnRepackagedStock Or _
+                            (blnReplacementStock And Not blnCancelledStock) Then
+                                
+3210                        fldCol1.Text = strNextSeqNum
+3220                        fldCol2.Text = strNextTotalPackagesQtyWgt & " " & strPackageTypeDesc
+3230                        fldCol3.Text = strNextDocTypeNum & Format(strNextDocDate, "Short Date")
+3240                    Else
+3250                        strNextTotalPackagesQtyWgt = "0"
+3260                    End If
+                        
+3270                    fldCol4.Text = Trim(IIf(IsNull(.Fields("Cert_Type").Value), "", Trim(.Fields("Cert_Type").Value)) & " " & IIf(IsNull(.Fields("Cert_Num").Value), "", Trim(.Fields("Cert_Num").Value)))
+3280                        fldCol14.Font.Bold = False
+3290                    dblInboundQtyWgt = Val(strNextTotalPackagesQtyWgt)
+                    
+                    ' PLDA Documents
+                    ' Modifed by Reims March 7, 2007 based on reply received on email on March 6, 2007
+                    ' regarding "Entrepot Missing Information for Release of CP 4.06.02"
+3300                Case "EXA", "EXB", "EXC", "EXD", "EXE", "EXF", "EXG", _
+                            "ACA", "ACB", "ACC", "ACD", "ACE", "ACF", "ACG", _
+                            "EUA", "EUB", "EUC", "EUD", "EUE", "EUF", "EUG", _
+                            "COA", "COB", "COC", "COD", "COE", "COF", "COG", _
+                            "IMH", "IMI", "IMJ", "IMK", _
+                            "ACH", "ACI", "ACJ", "ACK", _
+                            "EUH", "EUI", "EUJ", "EUK", _
+                            "COH", "COI", "COJ", "COK"
+
+3310                    If arrCommSettlement(0) = "71" Then
+3320                        If strNextSeqNum <> strPrevSeqNum Or _
+                                strNextPackagesType <> strPrevPackagesType Or _
+                                strNextDocTypeNum & strNextDocDate <> strPrevDocTypeNum & strPrevDocDate Or _
+                                blnRepackagedStock Or _
+                                (blnReplacementStock And _
+                                Not blnCancelledStock) _
+                                Then
+                                
+3330                            fldCol1.Text = strNextSeqNum
+3340                            fldCol2.Text = strNextTotalPackagesQtyWgt & " " & strPackageTypeDesc
+3350                            fldCol3.Text = strNextDocTypeNum & Format(strNextDocDate, "Short Date")
+3360                        Else
+3370                            strNextTotalPackagesQtyWgt = "0"
+3380                        End If
+                            
+3390                        fldCol4.Text = Trim(IIf(IsNull(.Fields("Cert_Type").Value), "", Trim(.Fields("Cert_Type").Value)) & " " & IIf(IsNull(.Fields("Cert_Num").Value), "", Trim(.Fields("Cert_Num").Value)))
+3400                        fldCol14.Font.Bold = False
+3410                        dblInboundQtyWgt = Val(strNextTotalPackagesQtyWgt)
+                            
+3420                    ElseIf arrCommSettlement(1) = "71" Then
+3430                        If strNextPackagesType <> strPrevPackagesType Or _
+                                strNextDocTypeNum & strNextDocDate <> strPrevDocTypeNum & strPrevDocDate Or _
+                                (blnReplacementStock And _
+                                Not blnCancelledStock) _
+                                Then
+                                
+3440                            If Not blnReplacementStock Then
+3450                                If strDocType <> "XXX" Then
+3460                                    fldCol4.Text = strNextDocTypeNum & Format(strNextDocDate, "Short Date")
+3470                                    fldCol4.Font.Bold = False
+3480                                Else
+3490                                    fldCol4.Text = "CLOSURE " & Format(strNextDocDate, "Short Date")
+3500                                    fldCol4.Font.Bold = True
+3510                                End If
+3520                            ElseIf lngSourceInID = -2 Or bytDocManual = 1 Then
+                                    ' Added to allow displaying of IM4 outbound corrections
+3530                                fldCol4.Text = strNextDocTypeNum & Format(strNextDocDate, "Short Date")
+3540                                fldCol4.Font.Bold = False
+3550                            End If
+                                
+3560                            Select Case arrCommSettlement(0)
+                                    Case "40", "01", "41" 'FROM REIMS
+3570                                    fldCol8.Text = strNextTotalPackagesQtyWgt & " " & strPackageTypeDesc
+                                        
+3580                                Case "45"
+3590                                    fldCol9.Text = strNextTotalPackagesQtyWgt & " " & strPackageTypeDesc
+                                    
+3600                                Case "42", "51", "52"
+3610                                    fldCol10.Text = strNextTotalPackagesQtyWgt & " " & strPackageTypeDesc
+                                    
+3620                                Case "31"
+3630                                    fldCol12.Text = strNextTotalPackagesQtyWgt & " " & strPackageTypeDesc
+                                    
+3640                                Case Else
+                                        ' Do Nothing
+3650                            End Select
+3660                        Else
+3670                            strNextTotalPackagesQtyWgt = "0"
+3680                        End If
+                            
+                            '<<< dandan 122007
+                            'This will update outbound qty weight
+3690                        dblOutboundQtyWgt = Val(strNextTotalPackagesQtyWgt)
+                            
+3700                    End If
+                    
+                    ' Non-PLDA Documents
+3710                Case Else
+3720                    If strNextPackagesType <> strPrevPackagesType Or _
+                            strNextDocTypeNum & strNextDocDate <> strPrevDocTypeNum & strPrevDocDate Or _
+                                (blnReplacementStock And _
+                                Not blnCancelledStock) _
+                                Then
+                            
+3730                        If Not blnReplacementStock Then
+3740                            If strDocType <> "XXX" Then
+3750                            fldCol4.Text = strNextDocTypeNum & Format(strNextDocDate, "Short Date")
+3760                                fldCol4.Font.Bold = False
+3770                            Else
+3780                                fldCol4.Text = "CLOSURE " & Format(strNextDocDate, "Short Date")
+3790                                fldCol4.Font.Bold = True
+3800                            End If
+3810                        ElseIf lngSourceInID = -2 Or bytDocManual = 1 Then
+                                ' Added to allow displaying of IM4 outbound corrections
+3820                            fldCol4.Text = strNextDocTypeNum & Format(strNextDocDate, "Short Date")
+3830                            fldCol4.Font.Bold = False
+3840                        End If
+                            
+3850                        Select Case strDocType
+                                ' Modifed by Reims March 7, 2007 based on reply received on email on March 6, 2007
+                                ' regarding "Entrepot Missing Information for Release of CP 4.06.02"
+                                'Case "IM0", "EU0", "IMH"   ' Type H - Free Circulation
+                                Case "IM0", "EU0"
+3860                                Select Case strCommSettlement
+                                        Case "0171"
+3870                                        fldCol11.Text = strNextTotalPackagesQtyWgt & " " & strPackageTypeDesc
+3880                                    Case Else
+3890                                        If lngSourceInID = -2 Or bytDocManual = 1 Then
+3900                                            fldCol8.Text = strNextTotalPackagesQtyWgt & " " & strPackageTypeDesc
+3910                                        End If
+3920                                End Select
+                                    
+3930                            Case "IM4", "EU4" ' Must be Import
+3940                                Select Case strCommSettlement
+                                        Case "4071"
+'                                            If IIf(IsNull(.Fields("Doc_Num").Value), "", Trim(.Fields("Doc_Num").Value)) = "CLOSURE" Then
+'
+'                                            Else
+3950                                            fldCol8.Text = strNextTotalPackagesQtyWgt & " " & strPackageTypeDesc
+'                                            End If
+3960                                    Case "4571"
+3970                                        fldCol9.Text = strNextTotalPackagesQtyWgt & " " & strPackageTypeDesc
+3980                                    Case "4271"
+3990                                        fldCol10.Text = strNextTotalPackagesQtyWgt & " " & strPackageTypeDesc
+'305                                     Case Else
+'310                                         strNextTotalPackagesQtyWgt = "0"
+4000                                    Case Else
+                                            'Added so communial settlement not needed for corrections
+4010                                        If lngSourceInID = -2 Or bytDocManual = 1 Then
+4020                                            fldCol8.Text = strNextTotalPackagesQtyWgt & " " & strPackageTypeDesc
+4030                                        End If
+4040                                End Select
+                                    
+4050                            Case "IM5", "EU5" ' Must be Import
+4060                                fldCol12.Text = strNextTotalPackagesQtyWgt & " " & strPackageTypeDesc
+                                
+                                ' Modifed by Reims March 7, 2007 based on reply received on email on March 6, 2007
+                                ' regarding "Entrepot Missing Information for Release of CP 4.06.02"
+'470                             Case "IM9", "IMI" ' Type I - Placing under a customs procedure
+                                           ' with economic impact other than the outward
+                                           ' processing and customs warehousing procedures
+                                           ' (inward processing (suspension system),
+                                           ' temporary importation, processing under
+                                           ' customs control)
+4070                            Case "IM9"
+4080                                fldCol8.Text = strNextTotalPackagesQtyWgt & " " & strPackageTypeDesc
+
+                                ' Modifed by Reims March 7, 2007 based on reply received on email on March 6, 2007
+                                ' regarding "Entrepot Missing Information for Release of CP 4.06.02"
+'480                             Case "E30", "E31", "E32", "U30", "U31", "U32", "EXD"   ' Type D - Re-export after customs warehousing
+4090                            Case "E30", "E31", "E32", "U30", "U31", "U32"
+4100                                fldCol12.Text = strNextTotalPackagesQtyWgt & " " & strPackageTypeDesc
+
+4110                            Case "001" ' Transit
+4120                                fldCol12.Text = strNextTotalPackagesQtyWgt & " " & strPackageTypeDesc
+
+4130                            Case "XXX"
+                                    'fldCol12.Text = strNextTotalPackagesQtyWgt & " " & strPackageTypeDesc
+4140                                fldCol12.Text = ""
+
+'355                             Case Else
+'360                                 strNextTotalPackagesQtyWgt = "0"
+4150                            Case Else
+                                    'Added so communial settlement not needed for corrections
+4160                                If lngSourceInID = -2 Or bytDocManual = 1 Then
+4170                                    fldCol8.Text = strNextTotalPackagesQtyWgt & " " & strPackageTypeDesc
+                                    
+                                    ' Modifed by Reims March 7, 2007 based on reply received on email on March 6, 2007
+                                    ' regarding "Entrepot Missing Information for Release of CP 4.06.02"
+                                    'ElseIf strDocType = "EXA" Or strDocType = "EXB" Or strDocType = "EXC" Then
+                                    '    fldCol8.Text = strNextTotalPackagesQtyWgt & " " & strPackageTypeDesc
+                                    '
+                                    'Else
+                                    '    ' Do Nothing
+4180                                End If
+4190                        End Select
+4200                    Else
+4210                        strNextTotalPackagesQtyWgt = "0"
+4220                    End If
+                        '<<< dandan 122007
+                        'Commented because it is not updated because its inside.. ahehehe
+4230                    dblOutboundQtyWgt = Val(strNextTotalPackagesQtyWgt)
+4240            End Select
+4250        End If
+            
+4260        mdblRunningTotal = mdblRunningTotal + dblInboundQtyWgt - dblOutboundQtyWgt
+                        
+4270        If Left(strNextDocTypeNum, 3) = "XXX" And blnHasbeenShown = False Then
+
+
+4280            dblRunningSubtotal = 0
+4290            mdblRunningTotal = 0
+4300            blnToAddLine = True
+4310        Else
+4320            dblRunningSubtotal = mcolSubtotalPackagesQtyWgt(strNextPackagesType) + dblInboundQtyWgt - dblOutboundQtyWgt
+
+4330            mcolSubtotalPackagesQtyWgt.Remove strNextPackagesType
+4340            mcolSubtotalPackagesQtyWgt.Add dblRunningSubtotal, strNextPackagesType
+4350        End If
+            
+            ' Default layout action is to print section, move to next position on layout, and move to next record
+4360        Me.LayoutAction = ddLAPrintSection + ddLAMoveLayout + ddLANextRecord
+            
+4370        If strDocType <> "BEGINSTOCK" Then
+                ' Re-used variables; proxy for strJobNum and strBatchNum
+4380            strDocType = IIf(IsNull(.Fields("Job_Num").Value), "", Trim(Replace(.Fields("Job_Num").Value, Chr(160), "", 1, 1)))
+4390            strDocNum = IIf(IsNull(.Fields("Batch_Num").Value), "", Trim(.Fields("Batch_Num").Value))
+                
+4400            If strDocType = "DIA" Then
+4410                strNextJobBatchNum = Trim(strDocType & " S" & strDocNum)
+4420            Else
+4430                strNextJobBatchNum = Trim(strDocType & " " & strDocNum)
+4440            End If
+                
+4450            If strNextSeqNum <> strPrevSeqNum Or strNextPackagesType <> strPrevPackagesType Or strNextDocTypeNum & strNextDocDate <> strPrevDocTypeNum & strPrevDocDate Or blnRepackagedStock Or (blnReplacementStock And Not blnCancelledStock) Then
+4460                fldCol12.Font.Bold = False
+                    
+4470                If IIf(IsNull(.Fields("Doc_Type").Value), "", Trim(.Fields("Doc_Type").Value)) = "XXX" And blnHasbeenShown = False Then
+4480                        fldCol13.Text = 0
+4490                Else
+4500                    fldCol13.Text = mdblRunningTotal
+4510                End If
+4520                fldCol13.Font.Bold = False
+                    
+4530                If IIf(IsNull(.Fields("Doc_Type").Value), "", Trim(.Fields("Doc_Type").Value)) = "XXX" Then
+4540                    fldCol14.Text = ""
+4550                    fldCol14.Font.Bold = False
+4560                Else
+4570                fldCol14.Text = strNextJobBatchNum
+4580                    fldCol14.Font.Bold = False
+4590                End If
+                    
+4600            Else
+4610                If strNextJobBatchNum <> strPrevJobBatchNum Then
+4620                    fldCol14.Text = strNextJobBatchNum
+4630                        fldCol14.Font.Bold = False
+4640                Else
+                        ' Print section and move to next record, but do not move to next position on layout
+4650                    Me.LayoutAction = ddLAPrintSection + ddLANextRecord
+                        
+                        ' Since we actually do not move to next row on layout, cancel out the incrementing of mlngCurrRowNum
+4660                    mlngCurrRowNum = mlngCurrRowNum - 1
+4670                End If
+4680            End If
+4690        End If
+            
+4700        strPrevSeqNum = strNextSeqNum
+4710        strPrevPackagesType = strNextPackagesType
+4720        strPrevDocTypeNum = strNextDocTypeNum
+4730        strPrevDocDate = strNextDocDate
+4740        strPrevJobBatchNum = strNextJobBatchNum
+
+            ' If current record is DIA cancellation, then next record is assumed to be replacement stock
+4750        If blnCancelledStock Then
+4760            blnReplacementStock = True
+4770        Else
+4780            blnReplacementStock = False
+4790        End If
+Continue:
+4800        If blnExit = True Then
+4810            Me.LayoutAction = ddLAPrintSection + ddLANextRecord
+4820            mlngCurrRowNum = mlngCurrRowNum - 1
+4830        End If
+            
+4840        If Not .EOF Then
+4850            .MoveNext
+4860            mlngCurrRowNum = mlngCurrRowNum + 1
+4870            lngDetailCounter = mlngCurrRowNum
+4880        End If
+            
+4890        If mlngCurrRowNum <= 69 Then     ' A page can accommodate 69 rows
+4900            If .EOF Then
+4910                Line43.Visible = True
+4920            Else
+4930                Line43.Visible = False
+4940            End If
+                
+4950            If mlngCurrRowNum = 69 Then
+4960                Line25.Visible = True    ' Print bottom line of row 69
+                    
+4970                If Not (.EOF And mrstStockCardOff.EOF) Then
+4980                    Detail.NewPage = ddNPAfter
+4990                End If
+5000            End If
+5010            Detail.PrintSection
+5020        End If
+5030    Else
+5040        mlngCurrRowNum = mlngCurrRowNum + 1
+            
+5050        If mlngCurrRowNum <= 69 Then     ' A page can accommodate 69 rows
+                ' If there are no documents to display under the current stock card and it's already the last page
+                ' because there are no more stock cards left, suppress the last page by not printing the detail section
+                ' This test will fail only if both conditions are false,
+                ' i.e. if it is the first row and there are no more stock cards left
+5060            If mlngCurrRowNum <> 1 Or Not mrstStockCardOff.EOF Then
+5070                intPackagesTypeCtr = intPackagesTypeCtr + 1
+                    
+5080                If intPackagesTypeCtr <= mcolSubtotalPackagesQtyWgt.Count Then
+                        ' Print SUBTOTAL caption beside first package type subtotal only
+5090                    If intPackagesTypeCtr = 1 Then
+5100                        fldCol12.Text = "SUBTOTAL"
+5110                        fldCol12.Font.Bold = True
+5120                    End If
+                        
+5130                    fldCol13.Text = mcolSubtotalPackagesQtyWgt(mcolPackageTypeCodes(intPackagesTypeCtr)) & " " & mcolPackageTypeCodes(intPackagesTypeCtr)
+5140                    fldCol13.Font.Bold = True
+                        
+5150                    If intPackagesTypeCtr = mcolSubtotalPackagesQtyWgt.Count Then
+5160                        Line43.Visible = True
+5170                    Else
+5180                        Line43.Visible = False
+5190                    End If
+5200                ElseIf intPackagesTypeCtr = mcolSubtotalPackagesQtyWgt.Count + 1 Then
+5210                    fldCol12.Text = "GRAND TOTAL"
+5220                    fldCol12.Font.Bold = True
+                        
+5230                    fldCol13.Text = mdblRunningTotal
+5240                    fldCol13.Font.Bold = True
+                        
+5250                    Line43.Visible = True
+5260                Else
+5270                    Line43.Visible = False
+5280                End If
+                    
+5290                If mlngCurrRowNum = 69 Then
+5300                    Line25.Visible = True    ' Print bottom line of row 69
+                        
+5310                    If Not mrstStockCardOff.EOF Then
+5320                        Detail.NewPage = ddNPAfter
+5330                    End If
+5340                End If
+                    
+5350                Detail.PrintSection          ' Fill page with blank rows until row 69
+5360            End If
+5370        End If
+5380    End If
+        
+5390      End With
+    
+5400      Exit Sub
+    
+ErrHandler:
+5410      Err.Raise Err.Number, , Err.Description
+5420      Resume Next
+End Sub
+
+Private Sub ActiveReport_ReportEnd()
+    ADORecordsetClose mrstMovements
+    ADORecordsetClose mrstStockCardOff
+    
+    Set mcolPackageTypeCodes = Nothing
+    Set mcolPackageTypeDescriptions = Nothing
+    Set mcolSubtotalPackagesQtyWgt = Nothing
+End Sub
+
+Friend Property Get FilterID() As Long
+    FilterID = mlngFilterID
+End Property
+
+Friend Property Let FilterID(ByVal lngFilterID As Long)
+    mlngFilterID = lngFilterID
+End Property
+
+Friend Property Get FilterType() As ReportFilterType
+    FilterType = mintFilterType
+End Property
+
+Friend Property Let FilterType(ByVal intFilterType As ReportFilterType)
+    mintFilterType = intFilterType
+End Property
+
+Friend Property Get Connection() As ADODB.Connection
+    Connection = mconSADBEL
+End Property
+
+Friend Property Set Connection(ByVal conConnection As ADODB.Connection)
+    Set mconSADBEL = conConnection
+End Property
+
+Friend Property Get PeriodFrom() As Date
+    PeriodFrom = mdtmPeriodFrom
+End Property
+
+Friend Property Let PeriodFrom(ByVal dtmPeriodFrom As Date)
+    mdtmPeriodFrom = dtmPeriodFrom
+End Property
+
+Friend Property Get PeriodTo() As Date
+    PeriodTo = mdtmPeriodTo
+End Property
+
+Friend Property Let PeriodTo(ByVal dtmPeriodTo As Date)
+    mdtmPeriodTo = dtmPeriodTo
+End Property
+
+Friend Property Get AppVersion() As String
+    AppVersion = mstrAppVersion
+End Property
+
+Friend Property Let AppVersion(ByVal strAppVersion As String)
+    mstrAppVersion = strAppVersion
+End Property
+
+Friend Property Get LicenseeName() As String
+    LicenseeName = mstrLicenseeName
+End Property
+
+Friend Property Let LicenseeName(ByVal strLicenseeName As String)
+    mstrLicenseeName = strLicenseeName
+End Property
+
+Friend Property Let LicCompanyName(ByVal strLicCompanyName As String)
+    mstrLicCompanyName = strLicCompanyName
+End Property
+
+Friend Property Get LicCompanyName() As String
+    LicCompanyName = mstrLicCompanyName
+End Property
+
+Friend Property Let LicIsDemo(ByVal blnIsDemo As Boolean)
+    mblnIsDemo = blnIsDemo
+End Property
+
+Friend Property Get LicIsDemo() As Boolean
+    LicIsDemo = mblnIsDemo
+End Property
+
+Public Property Get UserID() As Long
+    UserID = m_lngUserID
+End Property
+
+Public Property Let UserID(ByVal Value As Long)
+    m_lngUserID = Value
+End Property

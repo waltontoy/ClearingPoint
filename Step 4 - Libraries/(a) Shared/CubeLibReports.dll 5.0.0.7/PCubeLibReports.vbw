@@ -1,0 +1,12 @@
+cpiEmail = 0, 0, 0, 0, C
+frmMAPI = 0, 0, 0, 0, C, 66, 87, 875, 459, C
+RCombinedReports = 110, 145, 1265, 636, C, 44, 58, 883, 711, C
+cpiRptPreview = 0, 0, 0, 0, C
+CCombinedReports = 172, 139, 1097, 788, C
+frmPreview = 36, -10, 1084, 531, C, 110, 145, 919, 517, C
+cCommonDialog = 92, 92, 1341, 415, C
+cMemory = 0, 0, 0, 0, C
+GCommonDialog = 115, 115, 1364, 438, C
+mDialogHook = 42, 117, 489, 816, C
+mPublicTypes = 23, 23, 1272, 346, C
+CCPReports = 152, 115, 764, 951, C

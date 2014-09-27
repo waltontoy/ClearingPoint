@@ -1,0 +1,15 @@
+SDataItem = 136, 169, 929, 816, C
+CDataItem = 136, 117, 817, 816, C
+SDataItems = 136, 169, 970, 816, C
+modQueries = 136, 169, 1082, 816, C
+modSaving = 136, 117, 583, 816, C
+CDataNCTS = 136, 169, 921, 816, C
+SegmentCounts = 136, 117, 813, 816, C
+SegmentCount = 136, 117, 583, 816, C
+Segments = 136, 169, 1138, 816, C
+CEnumerations = 136, 117, 583, 816, C
+Segment = 136, 169, 899, 816, C
+EdifactParser = 136, 117, 1212, 816, C
+modDeclarations = 136, 169, 1056, 816, C
+EdifactMessage = 284, 87, 1293, 690, C
+modSubroutines = 201, 169, 1031, 816, C

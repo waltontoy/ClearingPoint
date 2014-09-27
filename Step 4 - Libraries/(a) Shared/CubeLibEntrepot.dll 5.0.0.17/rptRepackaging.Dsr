@@ -1,0 +1,812 @@
+VERSION 5.00
+Begin {9EB8768B-CDFA-44DF-8F3E-857A8405E1DB} rptRepackaging 
+   Caption         =   "Repackaging"
+   ClientHeight    =   7560
+   ClientLeft      =   60
+   ClientTop       =   450
+   ClientWidth     =   15420
+   Icon            =   "rptRepackaging.dsx":0000
+   ShowInTaskbar   =   0   'False
+   StartUpPosition =   1  'CenterOwner
+   _ExtentX        =   27199
+   _ExtentY        =   13335
+   SectionData     =   "rptRepackaging.dsx":000C
+End
+Attribute VB_Name = "rptRepackaging"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = False
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Option Explicit
+
+    Private m_lngUserID As Long
+    Public RepackagingConnection As ADODB.Connection
+    
+    Private mlngEntrepotID As Long
+    Private mstrPeriodFrom As String
+    Private mstrPeriodTo As String
+    Private mvarLanguage As String
+    Private mvarVersion As String
+    
+    Private mstrLicCompanyName As String
+    Private mblnIsDemo As Boolean
+    
+    Dim rstRepackagedItems As ADODB.Recordset
+    
+    Dim lngLineCounter As Long
+    Dim lngInIDCounter2 As Long
+    Dim lngInSourceIDCounter As Long
+    Dim lngLineCount As Long
+    
+    Dim astrHistory() As String
+    Dim astrIn_IDs() As String
+    Dim astrForSeq() As String
+    
+    Dim blnHaltAddInID As Boolean
+    Dim blnIDsHaveBeenSet As Boolean
+    Dim blnNoRepackagingDone As Boolean
+    Dim blnDonotAddRepackagedYet As Boolean
+    Dim blnAddEmptyLines As Boolean
+    
+Private Sub ActiveReport_FetchData(EOF As Boolean)
+    If rstRepackagedItems.EOF And blnHaltAddInID = False And blnDonotAddRepackagedYet = False And blnAddEmptyLines = False Then
+        EOF = True
+    Else
+        EOF = False
+    End If
+End Sub
+
+Private Sub ActiveReport_ReportEnd()
+    On Error Resume Next
+    ExecuteNonQuery RepackagingConnection, "Drop table tblRepackagingReport" & "_" & Format(m_lngUserID, "00")
+    'RepackagingConnection.Execute "Drop table tblRepackagingReport" & "_" & Format(m_lngUserID, "00")
+    On Error GoTo 0
+    On Error Resume Next
+    ExecuteNonQuery RepackagingConnection, "Drop table tblForSeqNum" & "_" & Format(m_lngUserID, "00")
+    'RepackagingConnection.Execute "Drop table tblForSeqNum" & "_" & Format(m_lngUserID, "00")
+    On Error GoTo 0
+    
+    ADORecordsetClose rstRepackagedItems
+End Sub
+
+Private Sub ActiveReport_ReportStart()
+    Dim strSQL As String
+    Dim strHistoryDBs As String
+    Dim strHistoryFile As String
+    Dim lngCounter As Long
+    Dim strSQlForSeqNum As String
+    Dim blnIsHistoryDBExisting As Boolean
+    
+    With Me
+        .Zoom = -1
+        If .Printer.DeviceName <> "" Then
+            .Printer.PaperSize = vbPRPSA4
+            .Printer.Orientation = ddOPortrait
+        Else
+                MsgBox "Problems occurred while connecting to printer. The report might be shown incorrectly.", vbInformation + vbOKOnly, "ClearingPoint"
+        End If
+    End With
+    
+    lngLineCounter = 1
+    lngInIDCounter2 = 0
+    lngInSourceIDCounter = 0
+    fldPeriodFrom.Text = DateValue(PeriodFrom)
+    fldPeriodTo.Text = DateValue(PeriodTo)
+    SetAuthorizedParty
+    blnIsHistoryDBExisting = False
+    
+    Select Case UCase(Language)
+        Case "ENGLISH"
+            lblRepackaging.Caption = UCase("Repackaging")
+        Case "DUTCH"
+            lblRepackaging.Caption = UCase("Manipulaties")
+        Case "FRENCH"
+            lblRepackaging.Caption = UCase("Manipulations")
+        Case Else
+            lblRepackaging.Caption = UCase("Repackaging")
+    End Select
+    
+    Me.Caption = lblRepackaging.Caption
+    
+    lblSequenceNo.Caption = Translate(2312)
+    lblSeqNum.Caption = Translate(2313)
+    lblStockCard.Caption = Translate(2314)
+    lblDate.Caption = Translate(747)
+    lblOrigQty.Caption = Translate(2315)
+    lblNewQty.Caption = Translate(2316)
+    lblPackageType.Caption = Translate(2317)
+    lblJobNo.Caption = Translate(2221)
+    lblBatchNo.Caption = Translate(2222)
+    lblEntrepotType.Caption = Translate(2318)
+    lblPeriodFrom.Caption = Translate(2319)
+    lblPeriodTo.Caption = Translate(2320)
+    'lblRepackaging.Caption = Translate(2321)
+    
+    
+    Dim strAppPath As String
+    'strAppPath = GetSetting("ClearingPoint", "Settings", "MdbPath", "")
+    strAppPath = NoBackSlash(g_objDataSourceProperties.InitialCatalogPath)
+    If strAppPath <> "" Then
+        strHistoryFile = ""
+        strHistoryFile = Dir(Trim(strAppPath) & "\mdb_history*.mdb")
+        strHistoryDBs = ""
+        Do Until strHistoryFile = ""
+            strHistoryDBs = strHistoryDBs & strHistoryFile & "/"
+            strHistoryFile = Dir()
+        Loop
+        
+        astrHistory = Split(strHistoryDBs, "/")
+        
+        For lngCounter = 0 To UBound(astrHistory) - 1
+            'JOY 11/28/2006
+            CreateLinkedTable g_objDataSourceProperties, DBInstanceType_DATABASE_SADBEL, "MDB_Entrepot_HisInbound" & Format(lngCounter, "00") & "_" & Format(m_lngUserID, "00"), DBInstanceType_DATABASE_HISTORY, "Inbounds", , GetHistoryDBYear(astrHistory(lngCounter))
+            CreateLinkedTable g_objDataSourceProperties, DBInstanceType_DATABASE_SADBEL, "MDB_Entrepot_HisInboundDocs" & Format(lngCounter, "00") & "_" & Format(m_lngUserID, "00"), DBInstanceType_DATABASE_HISTORY, "InboundDocs", , GetHistoryDBYear(astrHistory(lngCounter))
+            'AddLinkedTableEx "MDB_Entrepot_HisInbound" & Format(lngCounter, "00") & "_" & Format(m_lngUserID, "00"), strAppPath & "\mdb_sadbel.mdb", G_Main_Password, "Inbounds", strAppPath & "\" & astrHistory(lngCounter), G_Main_Password
+            'AddLinkedTableEx "MDB_Entrepot_HisInboundDocs" & Format(lngCounter, "00") & "_" & Format(m_lngUserID, "00"), strAppPath & "\mdb_sadbel.mdb", G_Main_Password, "InboundDocs", strAppPath & "\" & astrHistory(lngCounter), G_Main_Password
+        Next lngCounter
+        
+        On Error Resume Next
+        ExecuteNonQuery RepackagingConnection, "Drop table tblRepackagingReport" & "_" & Format(m_lngUserID, "00")
+        'RepackagingConnection.Execute "Drop table tblRepackagingReport" & "_" & Format(m_lngUserID, "00")
+        On Error GoTo 0
+        On Error Resume Next
+        ExecuteNonQuery RepackagingConnection, "Drop table tblForSeqNum" & "_" & Format(m_lngUserID, "00")
+        'RepackagingConnection.Execute "Drop table tblForSeqNum" & "_" & Format(m_lngUserID, "00")
+        On Error GoTo 0
+        
+        For lngCounter = 0 To UBound(astrHistory) - 1
+            blnIsHistoryDBExisting = True
+            
+            ' & "_" & Format(m_lngUserID, "00")
+            If lngCounter = 0 Then
+                strSQL = vbNullString
+                strSQL = strSQL & "SELECT " 'allanent nov7
+                strSQL = strSQL & "In_ID, "
+                strSQL = strSQL & "In_Batch_Num, "
+                strSQL = strSQL & "In_Job_Num, "
+                strSQL = strSQL & "In_Orig_Packages_Qty, "
+                strSQL = strSQL & "In_Orig_Gross_Weight, "
+                strSQL = strSQL & "In_Orig_Net_Weight, "
+                strSQL = strSQL & "In_Orig_Packages_Type, "
+                strSQL = strSQL & "StockCards.Stock_Card_Num as Stock_Card_Num, "
+                strSQL = strSQL & "In_Source_In_ID, "
+                strSQL = strSQL & "InDoc_Date, "
+                strSQL = strSQL & "InDoc_SeqNum, "
+                strSQL = strSQL & "Products.Prod_Handling As Prod_Handling "
+                strSQL = strSQL & "INTO "
+                strSQL = strSQL & "tblRepackagingReport" & "_" & Format(m_lngUserID, "00") & " "
+                strSQL = strSQL & "FROM "
+                strSQL = strSQL & "( "
+                    strSQL = strSQL & "MDB_Entrepot_HisInbound" & Format(lngCounter, "00") & "_" & Format(m_lngUserID, "00") & " AS Inbounds "
+                    strSQL = strSQL & "INNER JOIN "
+                    strSQL = strSQL & "( "
+                        strSQL = strSQL & "StockCards "
+                        strSQL = strSQL & "INNER JOIN "
+                        strSQL = strSQL & "( "
+                            strSQL = strSQL & "Products "
+                            strSQL = strSQL & "INNER JOIN "
+                            strSQL = strSQL & "Entrepots "
+                            strSQL = strSQL & "ON "
+                            strSQL = strSQL & "Entrepots.Entrepot_ID = Products.Entrepot_ID "
+                        strSQL = strSQL & ") "
+                        strSQL = strSQL & "ON "
+                        strSQL = strSQL & "StockCards.Prod_ID = Products.Prod_ID "
+                    strSQL = strSQL & ") "
+                    strSQL = strSQL & "ON "
+                    strSQL = strSQL & "Inbounds.Stock_ID = StockCards.Stock_ID "
+                strSQL = strSQL & ") "
+                strSQL = strSQL & "INNER JOIN "
+                strSQL = strSQL & "MDB_Entrepot_HisInboundDocs" & Format(lngCounter, "00") & "_" & Format(m_lngUserID, "00") & " AS InBoundDocs "
+                strSQL = strSQL & "ON "
+                strSQL = strSQL & "Inbounds.InDoc_ID = InboundDocs.InDoc_ID "
+                strSQL = strSQL & "WHERE "
+                strSQL = strSQL & "Entrepots.Entrepot_ID = " & EntrepotID & " "
+                strSQL = strSQL & "AND "
+                strSQL = strSQL & "DateValue(InDoc_Date) "
+                strSQL = strSQL & "BETWEEN "
+                strSQL = strSQL & "DateValue('" & PeriodFrom & "') "
+                strSQL = strSQL & "AND "
+                strSQL = strSQL & "DateValue('" & PeriodTo & "') "
+                
+                strSQlForSeqNum = vbNullString
+                strSQlForSeqNum = strSQlForSeqNum & "SELECT "
+                strSQlForSeqNum = strSQlForSeqNum & "In_ID, "
+                strSQlForSeqNum = strSQlForSeqNum & "InDoc_Date "
+                strSQlForSeqNum = strSQlForSeqNum & "INTO "
+                strSQlForSeqNum = strSQlForSeqNum & "tblForSeqNum" & "_" & Format(m_lngUserID, "00") & " "
+                strSQlForSeqNum = strSQlForSeqNum & "FROM "
+                strSQlForSeqNum = strSQlForSeqNum & "( "
+                    strSQlForSeqNum = strSQlForSeqNum & "MDB_Entrepot_HisInbound" & Format(lngCounter, "00") & "_" & Format(m_lngUserID, "00") & " AS Inbounds "
+                    strSQlForSeqNum = strSQlForSeqNum & "INNER JOIN "
+                    strSQlForSeqNum = strSQlForSeqNum & "( "
+                        strSQlForSeqNum = strSQlForSeqNum & "StockCards "
+                        strSQlForSeqNum = strSQlForSeqNum & "INNER JOIN "
+                        strSQlForSeqNum = strSQlForSeqNum & "( "
+                            strSQlForSeqNum = strSQlForSeqNum & "Products "
+                            strSQlForSeqNum = strSQlForSeqNum & "INNER JOIN "
+                            strSQlForSeqNum = strSQlForSeqNum & "Entrepots "
+                            strSQlForSeqNum = strSQlForSeqNum & "ON "
+                            strSQlForSeqNum = strSQlForSeqNum & "Entrepots.Entrepot_ID = Products.Entrepot_ID "
+                        strSQlForSeqNum = strSQlForSeqNum & ") "
+                    strSQlForSeqNum = strSQlForSeqNum & "ON "
+                    strSQlForSeqNum = strSQlForSeqNum & "StockCards.Prod_ID = Products.Prod_ID "
+                strSQlForSeqNum = strSQlForSeqNum & ") "
+                strSQlForSeqNum = strSQlForSeqNum & "ON "
+                strSQlForSeqNum = strSQlForSeqNum & "Inbounds.Stock_ID = StockCards.Stock_ID "
+            strSQlForSeqNum = strSQlForSeqNum & ") "
+            strSQlForSeqNum = strSQlForSeqNum & "INNER JOIN "
+            strSQlForSeqNum = strSQlForSeqNum & "MDB_Entrepot_HisInboundDocs" & Format(lngCounter, "00") & "_" & Format(m_lngUserID, "00") & " AS InboundDocs "
+            strSQlForSeqNum = strSQlForSeqNum & "ON "
+            strSQlForSeqNum = strSQlForSeqNum & "Inbounds.InDoc_ID = InboundDocs.InDoc_ID "
+            strSQlForSeqNum = strSQlForSeqNum & "WHERE "
+            strSQlForSeqNum = strSQlForSeqNum & "Entrepots.Entrepot_ID = " & EntrepotID & " "
+            strSQlForSeqNum = strSQlForSeqNum & "AND "
+            strSQlForSeqNum = strSQlForSeqNum & "In_Orig_Packages_Qty < 0 "
+            strSQlForSeqNum = strSQlForSeqNum & "AND "
+            strSQlForSeqNum = strSQlForSeqNum & "In_Orig_Gross_Weight < 0 "
+            strSQlForSeqNum = strSQlForSeqNum & "AND "
+            strSQlForSeqNum = strSQlForSeqNum & "In_Orig_Net_Weight < 0 "
+            strSQlForSeqNum = strSQlForSeqNum & "AND "
+            strSQlForSeqNum = strSQlForSeqNum & "In_Avl_Qty_Wgt < 0 "
+            strSQlForSeqNum = strSQlForSeqNum & "AND "
+            strSQlForSeqNum = strSQlForSeqNum & "( "
+                strSQlForSeqNum = strSQlForSeqNum & "In_Job_Num <> 'DIA' "
+                strSQlForSeqNum = strSQlForSeqNum & "OR "
+                strSQlForSeqNum = strSQlForSeqNum & "ISNULL(In_Job_Num) "
+            strSQlForSeqNum = strSQlForSeqNum & ") "
+            
+            Else
+                strSQL = vbNullString
+                strSQL = strSQL & "INSERT INTO " 'allanent nov7
+                strSQL = strSQL & "tblRepackagingReport" & "_" & Format(m_lngUserID, "00") & " "
+                strSQL = strSQL & "SELECT "
+                strSQL = strSQL & "In_ID, "
+                strSQL = strSQL & "In_Batch_Num, "
+                strSQL = strSQL & "In_Job_Num, "
+                strSQL = strSQL & "In_Orig_Packages_Qty, "
+                strSQL = strSQL & "In_Orig_Gross_Weight, "
+                strSQL = strSQL & "In_Orig_Net_Weight, "
+                strSQL = strSQL & "In_Orig_Packages_Type, "
+                strSQL = strSQL & "StockCards.Stock_Card_Num as Stock_Card_Num, "
+                strSQL = strSQL & "In_Source_In_ID, "
+                strSQL = strSQL & "InDoc_Date, "
+                strSQL = strSQL & "InDoc_SeqNum, "
+                strSQL = strSQL & "Products.Prod_Handling As Prod_Handling "
+                strSQL = strSQL & "FROM "
+                strSQL = strSQL & "( "
+                    strSQL = strSQL & "MDB_Entrepot_HisInbound" & Format(lngCounter, "00") & "_" & Format(m_lngUserID, "00") & " AS Inbounds "
+                    strSQL = strSQL & "INNER JOIN "
+                    strSQL = strSQL & "( "
+                        strSQL = strSQL & "StockCards "
+                        strSQL = strSQL & "INNER JOIN "
+                        strSQL = strSQL & "( "
+                            strSQL = strSQL & "Products "
+                            strSQL = strSQL & "INNER JOIN "
+                            strSQL = strSQL & "Entrepots "
+                            strSQL = strSQL & "ON "
+                            strSQL = strSQL & "Entrepots.Entrepot_ID = Products.Entrepot_ID "
+                        strSQL = strSQL & ") "
+                        strSQL = strSQL & "ON "
+                        strSQL = strSQL & "StockCards.Prod_ID = Products.Prod_ID "
+                    strSQL = strSQL & ") "
+                    strSQL = strSQL & "ON "
+                    strSQL = strSQL & "Inbounds.Stock_ID = StockCards.Stock_ID "
+                strSQL = strSQL & ") "
+                strSQL = strSQL & "INNER JOIN "
+                strSQL = strSQL & "MDB_Entrepot_HisInboundDocs" & Format(lngCounter, "00") & "_" & Format(m_lngUserID, "00") & " AS InboundDocs "
+                strSQL = strSQL & "ON "
+                strSQL = strSQL & "Inbounds.InDoc_ID = InboundDocs.InDoc_ID "
+                strSQL = strSQL & "WHERE "
+                strSQL = strSQL & "Entrepots.Entrepot_ID = " & EntrepotID & " "
+                strSQL = strSQL & "AND "
+                strSQL = strSQL & "DateValue(InDoc_Date) "
+                strSQL = strSQL & "BETWEEN "
+                strSQL = strSQL & "DateValue('" & PeriodFrom & "') "
+                strSQL = strSQL & "AND "
+                strSQL = strSQL & "DateValue('" & PeriodTo & "') "
+                
+                strSQlForSeqNum = vbNullString
+                strSQlForSeqNum = strSQlForSeqNum & "INSERT INTO "
+                strSQlForSeqNum = strSQlForSeqNum & "tblForSeqNum" & "_" & Format(m_lngUserID, "00") & " "
+                strSQlForSeqNum = strSQlForSeqNum & "SELECT "
+                strSQlForSeqNum = strSQlForSeqNum & "In_ID, "
+                strSQlForSeqNum = strSQlForSeqNum & "InDoc_Date "
+                strSQlForSeqNum = strSQlForSeqNum & "FROM "
+                strSQlForSeqNum = strSQlForSeqNum & "( "
+                    strSQlForSeqNum = strSQlForSeqNum & "MDB_Entrepot_HisInbound" & Format(lngCounter, "00") & "_" & Format(m_lngUserID, "00") & " AS Inbounds "
+                    strSQlForSeqNum = strSQlForSeqNum & "INNER JOIN "
+                    strSQlForSeqNum = strSQlForSeqNum & "( "
+                        strSQlForSeqNum = strSQlForSeqNum & "StockCards "
+                        strSQlForSeqNum = strSQlForSeqNum & "INNER JOIN "
+                        strSQlForSeqNum = strSQlForSeqNum & "( "
+                            strSQlForSeqNum = strSQlForSeqNum & "Products "
+                            strSQlForSeqNum = strSQlForSeqNum & "INNER JOIN "
+                            strSQlForSeqNum = strSQlForSeqNum & "Entrepots "
+                            strSQlForSeqNum = strSQlForSeqNum & "ON "
+                            strSQlForSeqNum = strSQlForSeqNum & "Entrepots.Entrepot_ID = Products.Entrepot_ID "
+                        strSQlForSeqNum = strSQlForSeqNum & ") "
+                        strSQlForSeqNum = strSQlForSeqNum & "ON "
+                        strSQlForSeqNum = strSQlForSeqNum & "StockCards.Prod_ID = Products.Prod_ID "
+                    strSQlForSeqNum = strSQlForSeqNum & ") "
+                    strSQlForSeqNum = strSQlForSeqNum & "ON "
+                    strSQlForSeqNum = strSQlForSeqNum & "Inbounds.Stock_ID = StockCards.Stock_ID"
+                strSQlForSeqNum = strSQlForSeqNum & ") "
+                strSQlForSeqNum = strSQlForSeqNum & "INNER JOIN "
+                strSQlForSeqNum = strSQlForSeqNum & "MDB_Entrepot_HisInboundDocs" & Format(lngCounter, "00") & "_" & Format(m_lngUserID, "00") & " AS InboundDocs "
+                strSQlForSeqNum = strSQlForSeqNum & "ON "
+                strSQlForSeqNum = strSQlForSeqNum & "Inbounds.InDoc_ID = InboundDocs.InDoc_ID "
+                strSQlForSeqNum = strSQlForSeqNum & "WHERE "
+                strSQlForSeqNum = strSQlForSeqNum & "Entrepots.Entrepot_ID = " & EntrepotID & " "
+                strSQlForSeqNum = strSQlForSeqNum & "AND "
+                strSQlForSeqNum = strSQlForSeqNum & "In_Orig_Packages_Qty < 0 "
+                strSQlForSeqNum = strSQlForSeqNum & "AND "
+                strSQlForSeqNum = strSQlForSeqNum & "In_Orig_Gross_Weight < 0 "
+                strSQlForSeqNum = strSQlForSeqNum & "AND "
+                strSQlForSeqNum = strSQlForSeqNum & "In_Orig_Net_Weight < 0 "
+                strSQlForSeqNum = strSQlForSeqNum & "AND "
+                strSQlForSeqNum = strSQlForSeqNum & "In_Avl_Qty_Wgt < 0 "
+                strSQlForSeqNum = strSQlForSeqNum & "AND "
+                strSQlForSeqNum = strSQlForSeqNum & "( "
+                    strSQlForSeqNum = strSQlForSeqNum & "In_Job_Num <> 'DIA' "
+                    strSQlForSeqNum = strSQlForSeqNum & "OR "
+                    strSQlForSeqNum = strSQlForSeqNum & "IsNull(In_Job_Num) "
+                strSQlForSeqNum = strSQlForSeqNum & ") "
+            
+            End If
+            
+            On Error Resume Next
+            ExecuteNonQuery RepackagingConnection, strSQL
+            ExecuteNonQuery RepackagingConnection, strSQlForSeqNum
+            'RepackagingConnection.Execute strSQL
+            'RepackagingConnection.Execute strSQlForSeqNum
+
+            If Err.Number = -2147217865 Then
+                lngCounter = lngCounter - 1
+            End If
+            On Error GoTo 0
+        Next lngCounter
+        For lngCounter = 0 To UBound(astrHistory) - 1
+            'JOY 11/28/2006
+            ExecuteNonQuery RepackagingConnection, "DROP TABLE MDB_Entrepot_HisInbound" & Format(lngCounter, "00") & "_" & Format(m_lngUserID, "00")
+            ExecuteNonQuery RepackagingConnection, "DROP TABLE MDB_Entrepot_HisInboundDocs" & Format(lngCounter, "00") & "_" & Format(m_lngUserID, "00")
+            'RepackagingConnection.Execute "DROP TABLE MDB_Entrepot_HisInbound" & Format(lngCounter, "00") & "_" & Format(m_lngUserID, "00")
+            'RepackagingConnection.Execute "DROP TABLE MDB_Entrepot_HisInboundDocs" & Format(lngCounter, "00") & "_" & Format(m_lngUserID, "00")
+        Next lngCounter
+        
+        If blnIsHistoryDBExisting = True Then
+                '<<< dandan 110807
+                'Corrected SQL
+                'strSQL = "Select * From tblRepackagingReport Order By InDoc_Date Asc" 'allanent nov7
+                strSQL = vbNullString
+                strSQL = strSQL & "SELECT "
+                strSQL = strSQL & "* "
+                strSQL = strSQL & "FROM "
+                strSQL = strSQL & "tblRepackagingReport_" & Format(m_lngUserID, "00") & " "
+                strSQL = strSQL & "ORDER BY "
+                strSQL = strSQL & "InDoc_Date "
+                strSQL = strSQL & "ASC"
+            ADORecordsetOpen strSQL, RepackagingConnection, rstRepackagedItems, adOpenKeyset, adLockOptimistic
+            'rstRepackagedItems.Open strSQL, RepackagingConnection, adOpenKeyset, adLockOptimistic
+            
+            If rstRepackagedItems.BOF And rstRepackagedItems.EOF Then
+                MsgBox "There are no repackagings in this Entrepot between " & PeriodFrom & " And " & PeriodTo & ".", vbOKOnly + vbInformation, "Repackaging Not Found"
+                Me.Cancel
+                Exit Sub
+            Else
+               SetSeqNum
+            End If
+        Else
+            MsgBox "No Repackaging Report to show.", vbInformation + vbOKOnly
+            Me.Cancel
+        End If
+    End If
+    blnIDsHaveBeenSet = False
+    blnHaltAddInID = False
+    blnDonotAddRepackagedYet = True
+    blnNoRepackagingDone = True
+    Line21.Visible = False
+    blnAddEmptyLines = False
+    
+    If LicIsDemo Then
+        lblVersionNum.Caption = "ClearingPoint v" & AppVersion & " Demo version"
+    Else
+        lblVersionNum.Caption = "ClearingPoint v" & AppVersion & IIf(Len(LicCompanyName) > 0, " Licensed to: " & LicCompanyName, "")
+    End If
+    
+    lblPrintDate.Caption = Translate(2322) & " " & Now()
+    
+    lngLineCount = 0
+End Sub
+
+
+Public Property Let EntrepotID(ByVal lngEntrepotID As Long)
+    mlngEntrepotID = lngEntrepotID
+End Property
+
+Public Property Get EntrepotID() As Long
+    EntrepotID = mlngEntrepotID
+End Property
+
+Public Property Let PeriodFrom(ByVal strDate As String)
+    mstrPeriodFrom = strDate
+End Property
+
+Public Property Get PeriodFrom() As String
+    PeriodFrom = mstrPeriodFrom
+End Property
+
+Public Property Let PeriodTo(ByVal strDate As String)
+    mstrPeriodTo = strDate
+End Property
+
+Public Property Get PeriodTo() As String
+    PeriodTo = mstrPeriodTo
+End Property
+
+Public Property Let Language(strLanguage As String)
+    mvarLanguage = strLanguage
+End Property
+
+Public Property Get Language() As String
+    Language = mvarLanguage
+End Property
+
+Public Property Let AppVersion(strVersion As String)
+    mvarVersion = strVersion
+End Property
+
+Public Property Get AppVersion() As String
+    AppVersion = mvarVersion
+End Property
+
+Friend Property Let LicCompanyName(ByVal strLicCompanyName As String)
+    mstrLicCompanyName = strLicCompanyName
+End Property
+
+Friend Property Get LicCompanyName() As String
+    LicCompanyName = mstrLicCompanyName
+End Property
+
+Friend Property Let LicIsDemo(ByVal blnIsDemo As Boolean)
+    mblnIsDemo = blnIsDemo
+End Property
+
+Friend Property Get LicIsDemo() As Boolean
+    LicIsDemo = mblnIsDemo
+End Property
+
+Private Sub SetAuthorizedParty()
+    Dim rstAuthorizedParty As ADODB.Recordset
+    Dim strSQL As String
+    
+        strSQL = " Select Auth_Name, Auth_Address, Auth_City, Auth_PostalCode, Auth_Country, Entrepot_Type, Entrepot_Num From " & _
+                        " AuthorizedParties Inner Join Entrepots on Entrepots.Auth_ID = AuthorizedParties.Auth_ID Where Entrepots.Entrepot_ID = " & _
+                        EntrepotID
+    ADORecordsetOpen strSQL, RepackagingConnection, rstAuthorizedParty, adOpenKeyset, adLockOptimistic
+    '.Open strSQL, RepackagingConnection, adOpenKeyset, adLockOptimistic
+    With rstAuthorizedParty
+        
+        
+        If Not (.BOF And .EOF) Then
+            .MoveFirst
+            
+            fldAuthorizedPartyName.Text = IIf(IsNull(.Fields("Auth_Name").Value), "", .Fields("Auth_Name").Value)
+            fldAuthorizedPartyAddress.Text = IIf(IsNull(.Fields("Auth_Address").Value), "", .Fields("Auth_Address").Value)
+            fldAuthorizedPartyPostCodeCity.Text = IIf(IsNull(.Fields("Auth_PostalCode").Value), "", .Fields("Auth_PostalCode").Value)
+            fldAuthorizedPartyCountry.Text = IIf(IsNull(.Fields("Auth_Country").Value), "", .Fields("Auth_Country").Value)
+            fldEntrepotType.Text = .Fields("Entrepot_Type").Value
+            fldEntrepotNum.Text = .Fields("Entrepot_Num").Value
+        Else
+            fldAuthorizedPartyName.Text = ""
+            fldAuthorizedPartyAddress.Text = ""
+            fldAuthorizedPartyPostCodeCity.Text = ""
+            fldAuthorizedPartyCountry.Text = ""
+            fldEntrepotType.Text = ""
+            fldEntrepotNum.Text = ""
+        End If
+    End With
+    
+    ADORecordsetClose rstAuthorizedParty
+End Sub
+
+Private Sub Detail_Format()
+    Dim strSQL As String
+    Dim lngInIDCounter As Long
+    Dim lngSourceID As Long
+    Dim lngIDCounter As Long
+    Dim lngToAdd As Long
+    
+    fldRapackSeq = ""
+    fldSequenceNo = ""
+    fldStockCardNO = ""
+    fldDate = ""
+    fldJobNo = ""
+    fldBatchNo = ""
+    fldOrigQty = ""
+    fldNewQty = ""
+    fldPackageType = ""
+    
+    lngToAdd = 0
+    
+    If blnAddEmptyLines = False Then
+        With rstRepackagedItems
+            If Not (.BOF And .EOF) Then
+                If blnIDsHaveBeenSet = False Then
+                    blnIDsHaveBeenSet = True
+                    .Filter = "In_Source_In_ID >= 0 or In_Source_In_ID < 0"
+                    lngInIDCounter = -1
+                    If .EOF Then
+                        blnDonotAddRepackagedYet = False
+                        blnHaltAddInID = False
+                        MsgBox "There are no repackagings in this Entrepot between " & PeriodFrom & " And " & PeriodTo & ".", vbOKOnly + vbInformation, "Repackaging Not Found"
+                        Me.Cancel
+                        Exit Sub
+                    End If
+                    Do While Not .EOF
+                        blnNoRepackagingDone = False
+                        lngInIDCounter = lngInIDCounter + 1
+                        If lngInIDCounter = 0 Then ReDim astrIn_IDs(lngInIDCounter)
+                        For lngIDCounter = 0 To UBound(astrIn_IDs)
+                            If .Fields("In_Source_In_ID").Value = astrIn_IDs(lngIDCounter) Then
+                                lngInIDCounter = lngInIDCounter - 1
+                                Exit For
+                            End If
+                        Next lngIDCounter
+                        ReDim Preserve astrIn_IDs(lngInIDCounter)
+                        astrIn_IDs(lngInIDCounter) = .Fields("In_Source_In_ID").Value
+                        .MoveNext
+                    Loop
+                    .Filter = adFilterNone
+                End If
+                
+                If blnNoRepackagingDone = False Then
+                    If blnIDsHaveBeenSet = True Then
+                        If blnHaltAddInID = False And (lngInIDCounter2 <= UBound(astrIn_IDs)) Then
+                            blnHaltAddInID = True
+                            blnDonotAddRepackagedYet = True
+                            .Filter = adFilterNone
+                            .Filter = "In_ID = " & astrIn_IDs(lngInIDCounter2)
+                            
+                            fldStockCardNO = .Fields("Stock_Card_Num").Value
+                            fldSequenceNo = .Fields("InDoc_SeqNum").Value
+                            fldDate = DateValue(.Fields("InDoc_Date").Value)
+                            fldJobNo = .Fields("In_Job_Num").Value
+                            fldBatchNo = .Fields("In_Batch_Num").Value
+                            fldOrigQty = -1 * Choose(Val(.Fields("Prod_Handling").Value) + 1, .Fields("In_Orig_Packages_Qty"), .Fields("In_Orig_Gross_Weight"), .Fields("In_Orig_Net_Weight"))
+                            fldNewQty = ""
+                            fldPackageType = .Fields("In_Orig_Packages_Type").Value
+                            fldRapackSeq = GetSeqNum(.Fields("In_ID").Value)
+                            
+                            lngLineCount = lngLineCount + 1
+                            
+                            Me.LayoutAction = ddLAPrintSection + ddLAMoveLayout + ddLANextRecord
+                            Detail.PrintSection
+                        End If
+                        
+                        If blnHaltAddInID = True And blnDonotAddRepackagedYet = False Then
+                            .Filter = adFilterNone
+                            .Filter = "In_Source_In_ID = " & astrIn_IDs(lngInIDCounter2)
+                            
+                            If .RecordCount > 1 Then
+                                For lngSourceID = 0 To .RecordCount - 1
+                                    If lngSourceID <> lngInSourceIDCounter Then
+                                        .MoveNext
+                                    ElseIf lngSourceID = lngInSourceIDCounter Then
+                                        Exit For
+                                    End If
+                                Next lngSourceID
+                            End If
+                            
+                            fldRapackSeq = ""
+    '                        fldStockCardNO = .Fields("Stock_Card_Num").Value
+    '                        fldSequenceNo = .Fields("InDoc_SeqNum").Value
+    '                        fldDate = DateValue(.Fields("InDoc_Date").Value)
+                            fldStockCardNO = ""
+                            fldSequenceNo = ""
+                            fldDate = ""
+                            fldJobNo = .Fields("In_Job_Num").Value
+                            fldBatchNo = .Fields("In_Batch_Num").Value
+                            fldOrigQty = ""
+                            fldNewQty = Choose(Val(.Fields("Prod_Handling").Value) + 1, .Fields("In_Orig_Packages_Qty"), .Fields("In_Orig_Gross_Weight"), .Fields("In_Orig_Net_Weight"))
+                            fldPackageType = .Fields("In_Orig_Packages_Type").Value
+                            
+                            lngInSourceIDCounter = lngInSourceIDCounter + 1
+                            lngLineCount = lngLineCount + 1
+                            
+                            Me.LayoutAction = ddLAPrintSection + ddLAMoveLayout + ddLANextRecord
+                            .MoveNext
+                            Detail.PrintSection
+                            If .EOF Then
+                                blnHaltAddInID = False
+                                lngInIDCounter2 = lngInIDCounter2 + 1
+                                lngInSourceIDCounter = 0
+                                
+                                If lngInIDCounter2 <= UBound(astrIn_IDs) Then
+                                    .Filter = adFilterNone
+                                    .Filter = "In_Source_In_ID = " & astrIn_IDs(lngInIDCounter2)
+            
+                                    lngToAdd = .RecordCount
+                                    If lngLineCount = 46 Then
+                                        blnAddEmptyLines = False
+                                    ElseIf (lngLineCount + lngToAdd + 1) > 46 Then
+                                        blnAddEmptyLines = True
+    '                                    Line21.Visible = True
+    '                                    Detail.NewPage = ddNPAfter
+                                    Else
+                                       
+                                    End If
+                                Else
+                                     If lngLineCount < 46 Then blnAddEmptyLines = True
+                                End If
+                                
+                            End If
+                        
+                        ElseIf blnHaltAddInID = True And blnDonotAddRepackagedYet = True Then
+                            blnDonotAddRepackagedYet = False
+                        End If
+                    End If
+                End If
+            End If
+        End With
+    Else
+        Detail.PrintSection
+        lngLineCount = lngLineCount + 1
+        If lngLineCount >= 46 Then
+'            Line21.Visible = True
+'            Detail.NewPage = ddNPAfter
+            blnAddEmptyLines = False
+        End If
+    End If
+    
+    If lngLineCount >= 46 Then
+        If lngLineCount = 46 Then Line21.Visible = True
+        lngLineCount = 0
+    Else
+         Line21.Visible = False
+    End If
+End Sub
+
+Private Sub PageHeader_Format()
+    Detail.NewPage = ddNPNone
+     Line21.Visible = False
+End Sub
+
+Private Sub SetSeqNum()
+    Dim lngCounter As Long
+    Dim lngSeqNum As Long
+    Dim strSQlForSeqNum As String
+    Dim rstForSequenceNumber As ADODB.Recordset
+    Dim lngRecordCounter As Long
+    Dim rstReopening As ADODB.Recordset
+    Dim strSQlForClosure As String
+    Dim strDateFrom As String
+    Dim strDateTo As String
+    Dim lngSeqCounter As Long
+
+    lngCounter = 0
+    lngSeqNum = 0
+
+        strSQlForSeqNum = "Select * From tblForSeqNum" & "_" & Format(m_lngUserID, "00") & " Order By InDoc_Date"
+    ADORecordsetOpen strSQlForSeqNum, RepackagingConnection, rstForSequenceNumber, adOpenKeyset, adLockOptimistic
+    'rstForSequenceNumber.Open strSQlForSeqNum, RepackagingConnection, adOpenKeyset, adLockOptimistic
+
+    ReDim astrForSeq(0, 0)
+    If Not (rstForSequenceNumber.BOF And rstForSequenceNumber.EOF) Then
+        rstForSequenceNumber.MoveFirst
+        
+        ReDim astrForSeq(rstForSequenceNumber.RecordCount - 1, 2)
+        lngRecordCounter = 0
+        Do While Not rstForSequenceNumber.EOF
+            astrForSeq(lngRecordCounter, 0) = rstForSequenceNumber.Fields("In_ID").Value
+            astrForSeq(lngRecordCounter, 1) = rstForSequenceNumber.Fields("InDoc_Date").Value
+            lngRecordCounter = lngRecordCounter + 1
+            rstForSequenceNumber.MoveNext
+        Loop
+    End If
+    ADORecordsetClose rstForSequenceNumber
+
+        strSQlForClosure = " Select Distinct InDoc_Num, InDoc_Date FROM (Inbounds Inner Join (StockCards Inner Join (Products Inner Join Entrepots on " & _
+                    " Products.Entrepot_ID = Entrepots.Entrepot_ID) On StockCards.Prod_ID = Products.Prod_ID) On Inbounds.Stock_ID = " & _
+                    " StockCards.Stock_ID) Inner Join InboundDocs on Inbounds.InDoc_ID = InboundDocs.InDoc_ID Where In_Code = '<<Closure>>' " & _
+                    " And Entrepots.Entrepot_ID = " & EntrepotID & " Order by InDoc_Date Desc"
+    ADORecordsetOpen strSQlForClosure, RepackagingConnection, rstReopening, adOpenKeyset, adLockOptimistic
+    'rstReopening.Open strSQlForClosure, RepackagingConnection, adOpenKeyset, adLockOptimistic
+
+    strDateFrom = ""
+    strDateTo = ""
+    lngSeqCounter = 0
+    
+    Dim lngEdit As Long
+    Dim lngRepSeq As Long
+    
+    With rstReopening
+        If UBound(astrForSeq) >= 0 And astrForSeq(0, 0) <> "" Then
+            If Not (.BOF And .EOF) Then
+                .MoveFirst
+                Do While Not .EOF
+                    For lngSeqCounter = 0 To UBound(astrForSeq)
+                        If DateValue(astrForSeq(lngSeqCounter, 1)) = DateValue(.Fields("InDoc_Date").Value) Then
+                            If (InStr(1, .Fields("InDoc_Date").Value, "11:59:") And InStr(1, .Fields("InDoc_Date").Value, "PM")) Or _
+                                InStr(1, .Fields("InDoc_Date").Value, "23:59:") Then
+                                If DateValue(astrForSeq(lngSeqCounter, 1)) > DateValue(.Fields("InDoc_Date").Value) Then
+                                    lngRepSeq = 0
+                                    For lngEdit = lngSeqCounter To UBound(astrForSeq)
+                                        lngRepSeq = lngRepSeq + 1
+                                        If astrForSeq(lngEdit, 2) = "" Then
+                                            astrForSeq(lngEdit, 2) = lngRepSeq
+                                        Else
+                                            Exit For
+                                        End If
+                                    Next lngEdit
+                                End If
+                            ElseIf (InStr(1, .Fields("InDoc_Date").Value, "12:00:") And InStr(1, .Fields("InDoc_Date").Value, "AM")) Or _
+                                        InStr(1, .Fields("InDoc_Date").Value, "00:00:01") Then
+                                lngRepSeq = 0
+                                For lngEdit = lngSeqCounter To UBound(astrForSeq)
+                                    lngRepSeq = lngRepSeq + 1
+                                    If astrForSeq(lngEdit, 2) = "" Then
+                                        astrForSeq(lngEdit, 2) = lngRepSeq
+                                    Else
+                                        Exit For
+                                    End If
+                                Next lngEdit
+                                Exit For
+                            End If
+                        ElseIf DateValue(astrForSeq(lngSeqCounter, 1)) > DateValue(.Fields("InDoc_Date").Value) Then
+                            lngRepSeq = 0
+                            For lngEdit = lngSeqCounter To UBound(astrForSeq)
+                                lngRepSeq = lngRepSeq + 1
+                                If astrForSeq(lngEdit, 2) = "" Then
+                                    astrForSeq(lngEdit, 2) = lngRepSeq
+                                Else
+                                    Exit For
+                                End If
+                            Next lngEdit
+                            Exit For
+                        End If
+                    Next lngSeqCounter
+                    
+                    .MoveNext
+                Loop
+                
+                lngRepSeq = 0
+                For lngSeqCounter = 0 To UBound(astrForSeq)
+                    lngRepSeq = lngRepSeq + 1
+                    If astrForSeq(lngSeqCounter, 2) = "" Then
+                        astrForSeq(lngSeqCounter, 2) = lngRepSeq
+                    End If
+                Next lngSeqCounter
+            Else
+                lngRepSeq = 0
+                For lngSeqCounter = 0 To UBound(astrForSeq)
+                    lngRepSeq = lngRepSeq + 1
+                    If astrForSeq(lngSeqCounter, 2) = "" Then
+                        astrForSeq(lngSeqCounter, 2) = lngRepSeq
+                    End If
+                Next lngSeqCounter
+            End If
+        End If
+    End With
+
+    ADORecordsetClose rstReopening
+    ADORecordsetClose rstForSequenceNumber
+End Sub
+
+Private Function GetSeqNum(ByVal strInID As String) As String
+    Dim lngCounter As Long
+    
+    For lngCounter = 0 To UBound(astrForSeq)
+        If astrForSeq(lngCounter, 0) = strInID Then
+            GetSeqNum = astrForSeq(lngCounter, 2)
+            Exit For
+        End If
+    Next lngCounter
+End Function
+
+Public Property Get UserID() As Long
+    UserID = m_lngUserID
+End Property
+
+Public Property Let UserID(ByVal Value As Long)
+    m_lngUserID = Value
+End Property

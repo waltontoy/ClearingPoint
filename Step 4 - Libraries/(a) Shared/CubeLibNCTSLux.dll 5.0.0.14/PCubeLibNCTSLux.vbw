@@ -1,0 +1,17 @@
+CNCTSXMLMessage = 136, 117, 1092, 816, C
+MGlobals = 136, 117, 1176, 816, C
+MProcedures = 158, 102, 1273, 749, C
+MDeparture = 136, 117, 1095, 816, C
+MCancellationRequest = 136, 117, 1092, 816, C
+CCusoffdepept = 136, 117, 1106, 816, C
+CCusres = 136, 117, 1006, 816, C
+CFunerrer = 0, 0, 0, 0, C
+CGuarantor = 0, 0, 0, 0, C
+CHea = 0, 0, 0, 0, C
+CTraconce1 = 0, 0, 0, 0, C
+CTraconco1 = 0, 0, 0, 0, C
+CTrapripc1 = 0, 0, 0, 0, C
+MArrivals = 136, 117, 1190, 816, C
+MUnloadingRemarks = 136, 117, 1334, 816, C
+CConresers = 0, 0, 0, 0, C
+CCusoffretcopocp = 0, 0, 0, 0, C

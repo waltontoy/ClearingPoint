@@ -1,0 +1,713 @@
+VERSION 5.00
+Begin {82282820-C017-11D0-A87C-00A0C90F29FC} rptSummary71 
+   BorderStyle     =   3  'Fixed Dialog
+   Caption         =   "CPEntrepotdll - rptSummary71 (ActiveReport)"
+   ClientHeight    =   5355
+   ClientLeft      =   45
+   ClientTop       =   330
+   ClientWidth     =   12345
+   Icon            =   "rptSummary71.dsx":0000
+   MaxButton       =   0   'False
+   MinButton       =   0   'False
+   ShowInTaskbar   =   0   'False
+   StartUpPosition =   1  'CenterOwner
+   WindowState     =   2  'Maximized
+   _ExtentX        =   21775
+   _ExtentY        =   9446
+   SectionData     =   "rptSummary71.dsx":000C
+End
+Attribute VB_Name = "rptSummary71"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = False
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Option Explicit
+
+Private m_lngUserID As Long
+Private mconSADBEL As ADODB.Connection
+Private mrstInbound As ADODB.Recordset
+
+Private mlngFilterID As Long
+Private mintFilterType As Integer
+
+Private mdtmPeriodFrom As Date
+Private mdtmPeriodTo As Date
+Private mstrAppVersion As String
+Private mstrLicenseeName As String
+
+Private mstrLicCompanyName As String
+Private mblnIsDemo As Boolean
+
+Private mstrStockCardNums As String
+Private mstrJobNums As String
+Private mstrBatchNums As String
+
+Private mlngOrigDetailHeight As Long
+
+Private Sub ActiveReport_ReportStart()
+    Dim rstSummary71 As ADODB.Recordset
+    
+    Dim strSQL As String
+    Dim strSADBELPath As String
+    Dim strHistoryPath As String
+    
+    Dim intYearCtr As Integer
+    Dim intPeriodFromYear As Integer
+    Dim intPeriodToYear As Integer
+    
+    Dim blnTableCreated As Boolean
+    
+    Dim lngErrNumber As Long
+    
+    On Error GoTo ErrHandler
+    
+    Call TranslateLabels
+    
+10  If mlngFilterID = 0 Then
+15      Me.Cancel
+    Else
+20      strSQL = "SELECT Auth_Name, Auth_Address, Auth_City, Auth_PostalCode, Auth_Country, Entrepot_Type, Entrepot_Num, Entrepot_StartDate" & _
+                 " FROM AuthorizedParties INNER JOIN Entrepots" & _
+                 " ON AuthorizedParties.Auth_ID = Entrepots.Auth_ID" & _
+                 " WHERE Entrepot_ID = " & mlngFilterID
+        
+25      Set rstSummary71 = New ADODB.Recordset
+        
+30      rstSummary71.Open strSQL, mconSADBEL, adOpenForwardOnly, adLockReadOnly
+        
+35      With rstSummary71
+40          If Not .EOF Then
+45              fldAuthorizedPartyName.Text = IIf(IsNull(.Fields("Auth_Name").Value), "", Trim(.Fields("Auth_Name").Value))
+                
+50              fldAuthorizedPartyAddress.Height = Label1.Top - fldAuthorizedPartyAddress.Top
+                
+                ' Omit authorized party country if authorized party name = licensee name
+55              If StrComp(fldAuthorizedPartyName.Text, mstrLicenseeName, vbTextCompare) = 0 Then
+60                  fldAuthorizedPartyAddress.Text = IIf(IsNull(.Fields("Auth_Address").Value), "", Trim(.Fields("Auth_Address").Value)) & vbCrLf & _
+                                                     IIf(IsNull(.Fields("Auth_PostalCode").Value), "", Trim(.Fields("Auth_PostalCode").Value)) & " " & IIf(IsNull(.Fields("Auth_City").Value), "", UCase(Trim(.Fields("Auth_City").Value)))
+                    
+65                  If UBound(Split(fldAuthorizedPartyAddress.Text, vbCrLf)) > 2 Then
+70                      fldAuthorizedPartyAddress.Font.Size = 5
+                    End If
+                Else
+75                  fldAuthorizedPartyAddress.Text = IIf(IsNull(.Fields("Auth_Address").Value), "", Trim(.Fields("Auth_Address").Value)) & vbCrLf & _
+                                                     IIf(IsNull(.Fields("Auth_PostalCode").Value), "", Trim(.Fields("Auth_PostalCode").Value)) & " " & IIf(IsNull(.Fields("Auth_City").Value), "", UCase(Trim(.Fields("Auth_City").Value))) & vbCrLf & _
+                                                     IIf(IsNull(.Fields("Auth_Country").Value), "", UCase(Trim(.Fields("Auth_Country").Value)))
+                    
+80                  If UBound(Split(fldAuthorizedPartyAddress.Text, vbCrLf)) > 2 Then
+85                      fldAuthorizedPartyAddress.Font.Size = 5
+                    End If
+                End If
+                
+90              fldAuthorizedPartyPostCodeCity.Visible = False
+95              fldAuthorizedPartyCountry.Visible = False
+                
+100             fldEntrepotType.Text = IIf(IsNull(.Fields("Entrepot_Type").Value), "", Trim(.Fields("Entrepot_Type").Value))
+105             fldEntrepotNum.Text = IIf(IsNull(.Fields("Entrepot_Num").Value), "", Trim(.Fields("Entrepot_Num").Value))
+                
+110             fldPeriodFrom.Text = mdtmPeriodFrom
+115             fldPeriodTo.Text = mdtmPeriodTo
+                
+120             intPeriodFromYear = IIf(IsNull(.Fields("Entrepot_StartDate").Value), 2004, Year(.Fields("Entrepot_StartDate").Value))
+125             intPeriodToYear = Year(mdtmPeriodTo)
+            End If
+            
+130         .Close
+        End With
+        
+135     Set rstSummary71 = Nothing
+        
+        On Error Resume Next
+        
+140     mconSADBEL.Execute "DROP TABLE tblInboundMovements" & "_" & Format(m_lngUserID, "00"), , adExecuteNoRecords
+        
+        On Error GoTo ErrHandler
+        
+145     strSADBELPath = mconSADBEL.Properties("Data Source").Value
+        
+150     blnTableCreated = False
+        
+155     For intYearCtr = intPeriodFromYear To intPeriodToYear
+160         strHistoryPath = Mid(strSADBELPath, 1, InStrRev(strSADBELPath, "\" & Dir(strSADBELPath), , vbTextCompare)) & "mdb_history" & Right(intYearCtr, 2) & ".mdb"
+            
+            
+165         If Len(Dir(strHistoryPath)) Then
+170             strHistoryPath = "[" & strHistoryPath & "]"
+                
+                strSQL = vbNullString
+                
+175             If Not blnTableCreated Then
+                    'Glenn 3/29/2006 - added fields needed to determine Repackaged operations.
+180                 strSQL = strSQL & "SELECT "
+                    strSQL = strSQL & "InDoc_SeqNum, "
+                    strSQL = strSQL & "InDoc_Type, "
+                    strSQL = strSQL & "InDoc_Num, "
+                    strSQL = strSQL & "InDoc_Date, "
+                    strSQL = strSQL & "InDoc_Office, "
+                    strSQL = strSQL & "In_Job_Num, "
+                    strSQL = strSQL & "In_Batch_Num, "
+                    strSQL = strSQL & "Stock_Card_Num, "
+                    strSQL = strSQL & "In_Orig_Packages_Qty, "
+                    strSQL = strSQL & "In_Orig_Gross_Weight, "
+                    strSQL = strSQL & "In_Orig_Net_Weight, "
+                    strSQL = strSQL & "In_Avl_Qty_Wgt, "
+                    strSQL = strSQL & "In_Source_In_ID, "
+                    strSQL = strSQL & "HistoryInboundDocs.InDoc_ID " '<<< dandan 102407
+                    strSQL = strSQL & "INTO tblInboundMovements" & "_" & Format(m_lngUserID, "00") & " "
+                    
+185                 blnTableCreated = True
+                Else
+                    'Glenn 3/29/2006 - added fields needed to determine Repackaged operations.
+190                 strSQL = strSQL & "INSERT INTO "
+                    strSQL = strSQL & "tblInboundMovements" & "_" & Format(m_lngUserID, "00") & " "
+                    strSQL = strSQL & "SELECT "
+                    strSQL = strSQL & "InDoc_SeqNum, "
+                    strSQL = strSQL & "InDoc_Type, "
+                    strSQL = strSQL & "InDoc_Num, "
+                    strSQL = strSQL & "InDoc_Date, "
+                    strSQL = strSQL & "InDoc_Office, "
+                    strSQL = strSQL & "In_Job_Num, "
+                    strSQL = strSQL & "In_Batch_Num, "
+                    strSQL = strSQL & "Stock_Card_Num, "
+                    strSQL = strSQL & "In_Orig_Packages_Qty, "
+                    strSQL = strSQL & "In_Orig_Gross_Weight, "
+                    strSQL = strSQL & "In_Orig_Net_Weight, "
+                    strSQL = strSQL & "In_Avl_Qty_Wgt, "
+                    strSQL = strSQL & "In_Source_In_ID "
+                End If
+                
+                'Added a where clause that excludes the Test Docs - rachelle 092205
+                'Added a where clause that excludes the Repackaged operations - Glenn 3/29/2006
+195                 strSQL = strSQL & "FROM "
+                    strSQL = strSQL & "Entrepots INNER JOIN ("
+                    strSQL = strSQL & "Products INNER JOIN ("
+                    strSQL = strSQL & "StockCards INNER JOIN ("
+                    strSQL = strSQL & "HistoryInboundDocs INNER JOIN HistoryInbounds "
+                    strSQL = strSQL & "ON "
+                    strSQL = strSQL & "HistoryInboundDocs.InDoc_ID = HistoryInbounds.InDoc_ID) "
+                    strSQL = strSQL & "ON "
+                    strSQL = strSQL & "StockCards.Stock_ID = HistoryInbounds.Stock_ID) "
+                    strSQL = strSQL & "ON "
+                    strSQL = strSQL & "Products.Prod_ID = StockCards.Prod_ID) "
+                    strSQL = strSQL & "ON Entrepots.Entrepot_ID = Products.Entrepot_ID "
+                    strSQL = strSQL & "WHERE "
+                    strSQL = strSQL & "Entrepots.Entrepot_ID = " & mlngFilterID & " "
+                    strSQL = strSQL & "AND "
+                    strSQL = strSQL & "DateValue(InDoc_Date) BETWEEN DateValue('" & mdtmPeriodFrom & "') "
+                    strSQL = strSQL & "AND "
+                    strSQL = strSQL & "DateValue('" & mdtmPeriodTo & "') "
+                    strSQL = strSQL & "AND "
+                    strSQL = strSQL & "(UCASE(RIGHT(HistoryInbounds.IN_CODE,8)) <> '<<TEST>>' "
+                    strSQL = strSQL & "OR "
+                    strSQL = strSQL & "ISNULL(HistoryInbounds.IN_CODE) ) "
+                    strSQL = strSQL & "AND "
+                    strSQL = strSQL & "(((In_Orig_Packages_Qty >= 0 "
+                    strSQL = strSQL & "AND "
+                    strSQL = strSQL & "In_Orig_Gross_Weight >= 0 "
+                    strSQL = strSQL & "AND "
+                    strSQL = strSQL & "In_Orig_Net_Weight >= 0 "
+                    strSQL = strSQL & "AND In_Avl_Qty_Wgt >= 0) "
+                    strSQL = strSQL & "OR In_Job_Num = 'DIA') "
+                    strSQL = strSQL & "AND "
+                    strSQL = strSQL & "In_Source_In_ID IS NULL) "
+                
+                
+                strSQL = Replace(strSQL, "HistoryInbounds", "HistoryInbounds" & Right(intYearCtr, 2))
+                strSQL = Replace(strSQL, "HistoryInboundDocs", "HistoryInboundDocs" & Right(intYearCtr, 2))
+200             mconSADBEL.Execute strSQL, , adExecuteNoRecords
+            End If
+        Next
+        
+        'RACHELLE 092405 ADDED WHERE CLAUSE TO EXCLUDE CLOSURE RECORDS
+'205     strSql = "SELECT * FROM tblInboundMovements" & "_" & Format(m_lngUserID, "00") & " WHERE UCASE(IN_JOB_NUM) <> 'RE-OPENING' AND UCASE(IN_BATCH_NUM) <> 'RE-OPENING' ORDER BY InDoc_SeqNum, InDoc_Date, Val(Stock_Card_Num)" - commented by rachelle sept. 26,2005
+205     strSQL = "SELECT * FROM tblInboundMovements" & "_" & Format(m_lngUserID, "00") & " ORDER BY InDoc_SeqNum, InDoc_Date, Val(Stock_Card_Num)"
+        
+210     Set mrstInbound = New ADODB.Recordset
+        
+        On Error Resume Next
+        
+215     mrstInbound.Open strSQL, mconSADBEL, adOpenForwardOnly, adLockReadOnly
+        
+220     If Err.Number = 0 Then
+            ' Do nothing.
+225     ElseIf Err.Number = -2147217865 Then    ' [The Microsoft database engine cannot find the input table or query 'tblInboundMovements'. Make sure it exists and that its name is spelled correctly.]
+230         Err.Clear
+            
+            ' Create dummy tblInboundMovements table whose record pointer is at EOF
+235         strSQL = "SELECT DISTINCT Null AS fldInboundMovements INTO tblInboundMovements" & "_" & Format(m_lngUserID, "00") & " FROM Inbounds "
+            
+240         mconSADBEL.Execute strSQL, , adExecuteNoRecords
+            
+245         strSQL = "DELETE fldInboundMovements FROM tblInboundMovements" & "_" & Format(m_lngUserID, "00") & " "
+            
+250         mconSADBEL.Execute strSQL, , adExecuteNoRecords
+            
+255         strSQL = "SELECT * FROM tblInboundMovements" & "_" & Format(m_lngUserID, "00") & " "
+            
+260         mrstInbound.Open strSQL, mconSADBEL, adOpenForwardOnly, adLockReadOnly
+            
+265         lngErrNumber = Err.Number
+        Else
+270         lngErrNumber = Err.Number
+        End If
+        
+        On Error GoTo ErrHandler
+        
+275     If lngErrNumber > 0 Then
+280         Err.Raise lngErrNumber
+        End If
+        
+285     If mrstInbound.EOF Then
+290         MsgBox "No documents made during this period.", vbOKOnly + vbExclamation, "Summary Reports"
+            
+295         Me.Cancel
+        Else
+300         GroupHeader1.GroupValue = mrstInbound.Fields("InDoc_SeqNum").Value
+            
+305         With Me
+310             .Zoom = -1
+                If .Printer.DeviceName <> "" Then
+315                 .Printer.PaperSize = vbPRPSA4
+320                 .Printer.Orientation = ddOPortrait
+                Else
+                    MsgBox "Problems occurred while connecting to printer. The report might be shown incorrectly.", vbInformation + vbOKOnly, "ClearingPoint"
+                End If
+            End With
+            
+325         mlngOrigDetailHeight = Detail.Height
+            
+            If LicIsDemo Then
+330             lblVersionNum.Caption = "ClearingPoint v" & mstrAppVersion & " Demo version"
+            Else
+                lblVersionNum.Caption = "ClearingPoint v" & mstrAppVersion & IIf(Len(LicCompanyName) > 0, " Licensed to: " & LicCompanyName, "")
+            End If
+            
+335         lblPrintDate.Caption = Translate(2328) & " " & Now()
+        End If
+    End If
+    
+    Exit Sub
+    
+ErrHandler:
+    
+    MsgBox Err.Description, vbOKOnly + vbExclamation, Err.Source & " (" & Err.Number & ", " & Erl & ")"
+End Sub
+
+Private Sub GroupHeader1_Format()
+    Dim strDocumentType As String
+    
+    fldCol1.Text = ""
+    fldCol2.Text = ""
+    fldCol3.Text = ""
+    fldCol4.Text = ""
+'    fldCol6.Text = ""
+'    fldCol7.Text = ""
+    
+    mstrStockCardNums = ""
+    mstrJobNums = ""
+    mstrBatchNums = ""
+    
+    With mrstInbound
+        If Not .EOF Then
+            fldCol1.Text = .Fields("InDoc_SeqNum").Value
+            
+            strDocumentType = IIf(IsNull(.Fields("InDoc_Type").Value), "", Trim(.Fields("InDoc_Type").Value))
+            Select Case UCase$(Trim$(strDocumentType))
+                Case "IMJ", _
+                        "IMK"
+                    strDocumentType = "IM7"
+            End Select
+            
+            '<<< dandan 102407
+            If Not IsIM7PLDA(mrstInbound.Fields("InDoc_Num").Value) Then
+                fldCol2.Text = strDocumentType & " S" & IIf(IsNull(.Fields("InDoc_Num").Value), "", Trim(.Fields("InDoc_Num").Value))
+            Else
+                fldCol2.Text = IIf(IsNull(.Fields("InDoc_Num").Value), "", Trim(.Fields("InDoc_Num").Value))
+            End If
+            
+            fldCol3.Text = Format(.Fields("InDoc_Date").Value, "Short Date")
+            fldCol4.Text = IIf(IsNull(.Fields("InDoc_Office").Value), "", Trim(.Fields("InDoc_Office").Value))
+'            fldCol6.Text = IIf(IsNull(.Fields("In_Job_Num").Value), "", Trim(.Fields("In_Job_Num").Value))
+'            fldCol7.Text = IIf(IsNull(.Fields("In_Batch_Num").Value), "", Trim(.Fields("In_Batch_Num").Value))
+        End If
+    End With
+End Sub
+
+'<<< dandan 102407
+'Function  to check if document (IM7) is of type plda  or not
+Private Function IsIM7PLDA(ByVal InDoc_Num As String) As Boolean
+    Dim strSQL As String
+    Dim rstIM7 As ADODB.Recordset
+    Dim strIN_CODE As String
+    Dim strInDoc_ID As String
+    
+    '<><><><><allan nov27
+    Dim conHistory As ADODB.Connection
+    Dim fld As ADODB.Field
+    Dim rstInDocIDHistory As ADODB.Recordset
+    Dim rstInDocIDSADBEL As ADODB.Recordset
+    Dim lngInDoc_ID As Long
+    Dim strMDBpath As String
+    Dim intYr As Integer
+    intYr = Year(Now)
+    
+    strMDBpath = GetSetting("ClearingPoint", "Settings", "MdbPath")
+        
+    OpenADODatabase conHistory, strMDBpath, "\Mdb_History" & Right(intYr, 2) & ".mdb"
+    '<><><><><allan nov27
+    
+    IsIM7PLDA = False
+    
+    'STEP 1 : Using InDoc_Num retrieve InDoc_ID in table InboundDocs
+    strSQL = vbNullString
+    strSQL = strSQL & "SELECT InDoc_ID FROM InboundDocs WHERE InDoc_Num = '" & Trim(InDoc_Num) & "' "
+    Set rstIM7 = New ADODB.Recordset
+    
+    RstOpen strSQL, mconSADBEL, rstIM7, adOpenKeyset, adLockOptimistic
+    
+    If Not (rstIM7.EOF And rstIM7.BOF) Then
+        If Not IsNull(rstIM7![InDoc_ID]) Then
+            strInDoc_ID = rstIM7![InDoc_ID]
+        Else
+            RstClose rstIM7
+            Exit Function
+        End If
+    Else
+        RstOpen "SELECT * FROM InboundDocs WHERE InDoc_Num = '" & Trim(InDoc_Num) & "' ", conHistory, rstInDocIDHistory, adOpenKeyset, adLockOptimistic
+        
+        If Not (rstInDocIDHistory.EOF And rstInDocIDHistory.BOF) Then
+            If Not IsNull(rstInDocIDHistory![InDoc_ID]) Then
+                strInDoc_ID = rstInDocIDHistory![InDoc_ID]
+            Else
+                RstClose rstInDocIDHistory
+                Exit Function
+            End If
+        Else
+            RstClose rstInDocIDHistory 'CSCLP-335
+            Exit Function
+        End If
+    End If
+        
+    RstClose rstIM7
+    
+    'STEP 2 : Using InDoc_ID retrieve In_Code in table Inbounds
+    strSQL = vbNullString
+    strSQL = strSQL & "SELECT In_Code FROM Inbounds WHERE InDoc_ID = " & Trim(strInDoc_ID) & " "
+    Set rstIM7 = New ADODB.Recordset
+    
+    RstOpen strSQL, mconSADBEL, rstIM7, adOpenKeyset, adLockOptimistic
+    
+    If Not (rstIM7.EOF And rstIM7.BOF) Then
+        If Not IsNull(rstIM7![In_Code]) Then
+            strIN_CODE = rstIM7![In_Code]
+        Else
+            RstClose rstIM7
+            Exit Function
+        End If
+    Else
+        RstOpen "SELECT * FROM Inbounds WHERE InDoc_ID = " & Trim(strInDoc_ID) & " ", conHistory, rstInDocIDHistory, adOpenKeyset, adLockOptimistic
+        
+        If Not (rstInDocIDHistory.EOF And rstInDocIDHistory.BOF) Then
+            If Not IsNull(rstInDocIDHistory![In_Code]) Then
+                strIN_CODE = rstInDocIDHistory![In_Code]
+            Else
+                RstClose rstInDocIDHistory
+                Exit Function
+            End If
+        Else
+            RstClose rstInDocIDHistory 'CSCLP-335
+            Exit Function
+        End If
+    End If
+        
+    RstClose rstIM7
+    
+    If (Len(Trim(strIN_CODE)) > 0) Then
+    'STEP 3 : Using In_Code search PLDA Import if found  then IsIM7PLDA = true else proceed to step 3
+        strSQL = vbNullString
+        strSQL = strSQL & "SELECT CODE FROM [PLDA IMPORT] WHERE CODE = '" & Trim(strIN_CODE) & "' "
+        RstOpen strSQL, mconSADBEL, rstIM7, adOpenKeyset, adLockOptimistic
+        
+        If Not (rstIM7.EOF And rstIM7.BOF) Then
+            IsIM7PLDA = True
+        Else
+            RstOpen strSQL, conHistory, rstIM7, adOpenKeyset, adLockOptimistic
+            If Not (rstIM7.EOF And rstIM7.BOF) Then
+                IsIM7PLDA = True
+            End If
+        End If
+        
+        'search history uli
+        
+        RstClose rstIM7
+                    
+        If (IsIM7PLDA = True) Then
+            Exit Function
+        End If
+        
+        
+    'STEP 3 : Using In_Code search PLDA Combined if found then IsIM7PLDA = true else false
+        strSQL = vbNullString
+        strSQL = strSQL & "SELECT CODE FROM [PLDA IMPORT] WHERE CODE = '" & Trim(strIN_CODE) & "' "
+        RstOpen strSQL, mconSADBEL, rstIM7, adOpenKeyset, adLockOptimistic
+        
+        If Not (rstIM7.EOF And rstIM7.BOF) Then
+            IsIM7PLDA = True
+        Else
+            RstOpen strSQL, conHistory, rstIM7, adOpenKeyset, adLockOptimistic
+            If Not (rstIM7.EOF And rstIM7.BOF) Then
+                IsIM7PLDA = True
+            End If
+        End If
+    
+        RstClose rstIM7
+    End If
+    
+End Function
+
+
+Private Sub Detail_Format()
+    Dim strPrevStockCardNum As String
+    Dim strNextStockCardNum As String
+    
+    Dim strPrevJobNum As String
+    Dim strNextJobNum As String
+    
+    Dim strPrevBatchNum As String
+    Dim strNextBatchNum As String
+    
+    On Error GoTo ErrHandler
+    
+10  fldCol5.Text = ""
+15  fldCol6.Text = ""
+20  fldCol7.Text = ""
+    
+25  With mrstInbound
+30      If Not .EOF Then
+35          strPrevStockCardNum = IIf(IsNull(.Fields("Stock_Card_Num").Value), "", Trim(.Fields("Stock_Card_Num").Value))
+40          strPrevJobNum = IIf(IsNull(.Fields("In_Job_Num").Value), "", Trim(.Fields("In_Job_Num").Value))
+45          strPrevBatchNum = IIf(IsNull(.Fields("In_Batch_Num").Value), "", Trim(.Fields("In_Batch_Num").Value))
+            
+            ' If two consecutive inbound documents have the same stockcard number, do not repeat same stockcard number
+50          If InStr(1, "/ " & mstrStockCardNums & "/ ", "/ " & strPrevStockCardNum & "/ ") = 0 Then
+55              mstrStockCardNums = IIf(Len(mstrStockCardNums), mstrStockCardNums & "/ ", "") & strPrevStockCardNum
+            End If
+            
+            ' If two consecutive inbound documents have the same job number, do not repeat same job number
+60          If InStr(1, "/ " & mstrJobNums & "/ ", "/ " & strPrevJobNum & "/ ") = 0 Then
+65              mstrJobNums = IIf(Len(mstrJobNums), mstrJobNums & "/ ", "") & strPrevJobNum
+            End If
+            
+            ' If two consecutive inbound documents have the same batch number, do not repeat same batch number
+70          If InStr(1, "/ " & mstrBatchNums & "/ ", "/ " & strPrevBatchNum & "/ ") = 0 Then
+75              mstrBatchNums = IIf(Len(mstrBatchNums), mstrBatchNums & "/ ", "") & strPrevBatchNum
+            End If
+            
+80          .MoveNext
+            
+            ' Default layout action is to print section, move to next position on layout, and move to next record
+85          Me.LayoutAction = ddLAPrintSection + ddLAMoveLayout + ddLANextRecord
+            
+90          If Not .EOF Then
+                ' If new stockcard number still on same inbound document,
+95              If GroupHeader1.GroupValue = .Fields("InDoc_SeqNum").Value Then
+100                 strNextStockCardNum = IIf(IsNull(.Fields("Stock_Card_Num").Value), "", Trim(.Fields("Stock_Card_Num").Value))
+105                 strNextJobNum = IIf(IsNull(.Fields("In_Job_Num").Value), "", Trim(.Fields("In_Job_Num").Value))
+110                 strNextBatchNum = IIf(IsNull(.Fields("In_Batch_Num").Value), "", Trim(.Fields("In_Batch_Num").Value))
+                    
+'                    ' If two consecutive inbound documents have the same stockcard number, do not delimit
+'                    If strPrevStockCardNum <> strNextStockCardNum Then
+'                        mstrStockCardNums = mstrStockCardNums & "/ "
+'                    End If
+                    
+                    ' Auto-adjusts field and detail height to accommodate multiple stockcard, job, and batch numbers
+115                 fldCol5.CanGrow = True
+120                 fldCol6.CanGrow = True
+125                 fldCol7.CanGrow = True
+                    
+'                    Detail.CanGrow = True
+                    
+                    ' Do not print section and do not move to next position on layout, but move to next record
+130                 Me.LayoutAction = ddLANextRecord
+                ' Else    ' But if new stockcard number on different inbound document,
+                    ' Do default layout action
+                Else
+135                 If fldCol5.CanGrow Then
+140                     Detail.CanGrow = True
+                    End If
+                End If
+            Else
+145             Line13.Visible = True    ' Print bottom line of row 88
+                
+150             If fldCol5.CanGrow Then
+155                 Detail.CanGrow = True
+                End If
+            End If
+            
+160         fldCol5.Text = mstrStockCardNums
+165         fldCol6.Text = mstrJobNums
+170         fldCol7.Text = mstrBatchNums
+            
+175         Detail.PrintSection
+        Else
+'            Line13.Visible = True    ' Print bottom line of row 88
+            
+'            If Detail.Visible Then
+'                Detail.PrintSection       ' Fill page with blank rows until row 88
+'            End If
+        End If
+    End With
+    
+    Exit Sub
+    
+ErrHandler:
+    
+    MsgBox Err.Description, vbOKOnly + vbExclamation, Err.Source & " (" & Err.Number & ", " & Erl & ")"
+End Sub
+
+Private Sub Detail_BeforePrint()
+'    Dim lngNumOfRows As Long
+    
+'    ' Get integral number of rows accommodated by new detail height
+'    lngNumOfRows = Detail.Height \ mlngOrigDetailHeight
+    
+'    ' Force fldCol5, fldCol6, and fldCol7 height and detail height to grow only to integral height
+'    fldCol5.Height = lngNumOfRows * mlngOrigDetailHeight
+'    fldCol6.Height = lngNumOfRows * mlngOrigDetailHeight
+'    fldCol7.Height = lngNumOfRows * mlngOrigDetailHeight
+    
+'    Detail.Height = lngNumOfRows * mlngOrigDetailHeight
+    
+    ' Adjust divider line heights to new detail height
+    Line14.Y2 = Detail.Height
+    Line15.Y2 = Detail.Height
+    Line16.Y2 = Detail.Height
+    Line17.Y2 = Detail.Height
+    Line18.Y2 = Detail.Height
+    Line19.Y2 = Detail.Height
+    Line20.Y2 = Detail.Height
+    Line21.Y2 = Detail.Height
+    
+    Line13.Y1 = Line14.Y2 - 2
+    Line13.Y2 = Line21.Y2 - 2
+    
+'    ' Increase actual number of rows by integral number of rows accommodated by new detail height
+'    mlngCurrRowNum = mlngCurrRowNum + (lngNumOfRows - 1)
+    
+    If Not mrstInbound.EOF Then
+        GroupHeader1.GroupValue = mrstInbound.Fields("InDoc_SeqNum").Value
+    End If
+    
+    ' If previous detail can grow because of multiple stockcard, job, or batch numbers,
+    ' reset to default value, i.e. next detail cannot grow
+    If Detail.CanGrow Then
+        fldCol5.CanGrow = False
+        fldCol6.CanGrow = False
+        fldCol7.CanGrow = False
+        
+        Detail.CanGrow = False
+    End If
+End Sub
+
+Private Sub ActiveReport_ReportEnd()
+    mrstInbound.Close
+    
+    Set mrstInbound = Nothing
+End Sub
+Private Sub TranslateLabels()
+    
+    lblVoorraadfiche.Caption = UCase$(Translate(2333))
+    lblEntrepotType.Caption = UCase$(Translate(2317))
+    lblPeriodFrom.Caption = UCase$(Translate(2319))
+    lblEntrepotNum.Caption = UCase$(Translate(2331))
+    lblPeriodTo.Caption = UCase$(Translate(2332))
+    Label1.Caption = UCase$(Translate(2334)) 'VOLGNUMMER
+    Label8.Caption = UCase$(Translate(2335))  'AANGIFTEN MET CODE 71
+    Label2.Caption = UCase$(Translate(838)) 'NUMMER
+    Label3.Caption = UCase$(Translate(2048)) 'DATUM
+    Label4.Caption = UCase$(Translate(2339)) 'KANTOOR
+    Label5.Caption = UCase$(Translate(2336)) 'REFERTE NAAR VOORRAADFICHE
+    Label6.Caption = UCase$(Translate(2337)) 'DOSSIERNUMMER
+    Label7.Caption = UCase$(Translate(2338)) 'LOTNUMMER
+
+End Sub
+
+Friend Property Get FilterID() As Long
+    FilterID = mlngFilterID
+End Property
+
+Friend Property Let FilterID(ByVal lngFilterID As Long)
+    mlngFilterID = lngFilterID
+End Property
+
+Friend Property Get FilterType() As ReportFilterType
+    FilterType = mintFilterType
+End Property
+
+Friend Property Let FilterType(ByVal intFilterType As ReportFilterType)
+    mintFilterType = intFilterType
+End Property
+
+Friend Property Get Connection() As ADODB.Connection
+    Connection = mconSADBEL
+End Property
+
+Friend Property Set Connection(ByVal conConnection As ADODB.Connection)
+    Set mconSADBEL = conConnection
+End Property
+
+Friend Property Get PeriodFrom() As Date
+    PeriodFrom = mdtmPeriodFrom
+End Property
+
+Friend Property Let PeriodFrom(ByVal dtmPeriodFrom As Date)
+    mdtmPeriodFrom = dtmPeriodFrom
+End Property
+
+Friend Property Get PeriodTo() As Date
+    PeriodTo = mdtmPeriodTo
+End Property
+
+Friend Property Let PeriodTo(ByVal dtmPeriodTo As Date)
+    mdtmPeriodTo = dtmPeriodTo
+End Property
+
+Friend Property Get AppVersion() As String
+    AppVersion = mstrAppVersion
+End Property
+
+Friend Property Let AppVersion(ByVal strAppVersion As String)
+    mstrAppVersion = strAppVersion
+End Property
+
+Friend Property Get LicenseeName() As String
+    LicenseeName = mstrLicenseeName
+End Property
+
+Friend Property Let LicenseeName(ByVal strLicenseeName As String)
+    mstrLicenseeName = strLicenseeName
+End Property
+
+Friend Property Let LicCompanyName(ByVal strLicCompanyName As String)
+    mstrLicCompanyName = strLicCompanyName
+End Property
+
+Friend Property Get LicCompanyName() As String
+    LicCompanyName = mstrLicCompanyName
+End Property
+
+Friend Property Let LicIsDemo(ByVal blnIsDemo As Boolean)
+    mblnIsDemo = blnIsDemo
+End Property
+
+Friend Property Get LicIsDemo() As Boolean
+    LicIsDemo = mblnIsDemo
+End Property
+
+Public Property Get UserID() As Long
+    UserID = m_lngUserID
+End Property
+
+Public Property Let UserID(ByVal Value As Long) 'Edwin - Change to long from variant
+    m_lngUserID = Value
+End Property

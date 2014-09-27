@@ -1,0 +1,2347 @@
+VERSION 5.00
+Begin {82282820-C017-11D0-A87C-00A0C90F29FC} rptCarryOverStock 
+   BorderStyle     =   3  'Fixed Dialog
+   Caption         =   "Summary of Carryover Stock"
+   ClientHeight    =   9855
+   ClientLeft      =   45
+   ClientTop       =   330
+   ClientWidth     =   13875
+   Icon            =   "rptCarryOverStock.dsx":0000
+   MaxButton       =   0   'False
+   MinButton       =   0   'False
+   ShowInTaskbar   =   0   'False
+   StartUpPosition =   1  'CenterOwner
+   WindowState     =   2  'Maximized
+   _ExtentX        =   24474
+   _ExtentY        =   17383
+   SectionData     =   "rptCarryOverStock.dsx":000C
+End
+Attribute VB_Name = "rptCarryOverStock"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = False
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Option Explicit
+
+Private m_lngUserID As Long
+Private WithEvents mconSADBEL As ADODB.Connection
+Attribute mconSADBEL.VB_VarHelpID = -1
+Private mrst As ADODB.Recordset
+
+Private WithEvents mconHistory As ADODB.Connection
+Attribute mconHistory.VB_VarHelpID = -1
+Private WithEvents mconTmpHistoryWithExecteDoneEvent As ADODB.Connection
+Attribute mconTmpHistoryWithExecteDoneEvent.VB_VarHelpID = -1
+
+Private mlngFilterID As Long
+'Private mintFilterType As Integer
+
+'Private mdtmPeriodFrom As Date
+Private mdtmPeriodTo As Date
+Private mstrAppVersion As String
+Private mstrLicenseeName As String
+Private m_blnShowZeroStocks As Boolean
+Private mstrLicCompanyName As String
+Private mblnIsDemo As Boolean
+
+'Private mstrStockCardNums As String
+'Private mstrJobNums As String
+'Private mstrBatchNums As String
+
+Private mlngOrigDetailHeight As Long
+'Private mlngCurrRowNum As Long
+
+Private mblnExecuteDone As Boolean
+Private mstrLanguage As String
+Private mstrMDBPath As String
+
+Private mdblQuantityTotal As Double
+Private mdblGrossTotal As Double
+Private mdblNetTotal As Double
+
+Private m_lngDetailCounter As Long
+Private m_dblTotal As Double
+
+Private Sub ActiveReport_PageEnd()
+    If Me.pageNumber = 1 And mrst.EOF = False Then
+        m_lngDetailCounter = m_lngDetailCounter - 1
+    ElseIf mrst.EOF And Me.pageNumber > 1 Then
+        m_lngDetailCounter = m_lngDetailCounter + 1
+    End If
+    Canvas.DrawLine Me.PageLeftMargin, (m_lngDetailCounter * Detail.Height) + Me.PageHeader.Height + Me.PageTopMargin, Me.PageLeftMargin + 9642, (m_lngDetailCounter * Detail.Height) + Me.PageHeader.Height + Me.PageTopMargin
+    m_lngDetailCounter = 0
+End Sub
+
+Private Sub ActiveReport_ReportStart()
+    Dim strSQL As String
+    
+    ResetFields
+    FormatFields
+    
+    TranslateLabels
+    
+    FillAuthorization
+                
+    CreateTempTables
+    
+    With Me
+        .Zoom = -1
+        If .Printer.DeviceName <> "" Then
+            .Printer.PaperSize = vbPRPSA4
+            .Printer.Orientation = ddOPortrait
+        Else
+            MsgBox "Problems occurred while connecting to printer. The report might be shown incorrectly.", vbInformation + vbOKOnly, "ClearingPoint"
+        End If
+    End With
+    
+    mlngOrigDetailHeight = Detail.Height
+    
+    If LicIsDemo Then
+        lblVersionNum.Caption = "ClearingPoint v" & mstrAppVersion & " Demo version"
+    Else
+        lblVersionNum.Caption = "ClearingPoint v" & mstrAppVersion & IIf(Len(LicCompanyName) > 0, " Licensed to: " & LicCompanyName, "")
+    End If
+    
+    lblPrintDate.Caption = Translate(2328) & " " & Now()
+End Sub
+
+Private Sub Detail_BeforePrint()
+    Line49.Y2 = Detail.Height
+    Line50.Y2 = Detail.Height
+    Line51.Y2 = Detail.Height
+    Line52.Y2 = Detail.Height
+    Line53.Y2 = Detail.Height
+    Line54.Y2 = Detail.Height
+    Line55.Y2 = Detail.Height
+    Line58.Y2 = Detail.Height
+    Line60.Y2 = Detail.Height
+End Sub
+
+Private Sub Detail_Format()
+    Dim strPrevStockCardNum As String
+    Dim strNextStockCardNum As String
+    
+    Dim strPrevJobNum As String
+    Dim strNextJobNum As String
+    
+    Dim strPrevBatchNum As String
+    Dim strNextBatchNum As String
+    
+    
+    
+            
+    ' Default layout action is to print section, move to next position on layout, and move to next record
+    Me.LayoutAction = ddLAPrintSection + ddLAMoveLayout + ddLANextRecord
+            
+            
+    With mrst
+        If Not .EOF Then
+            m_lngDetailCounter = m_lngDetailCounter + 1
+            Me.fldProdNum = !Prod_Num
+            Me.fldStockCardNum = !Stock_Card_Num
+            Me.fldProdDesc = !Prod_Desc
+            Me.fldCtryOfOrigin = !Origin_Ctry_Desc
+            Me.fldCountryOfExport = !Export_Ctry_Desc
+            
+            Me.fldQuantity = CStr(IIf(IsNull(!Quantity), 0, !Quantity)) & " " & !Packages_Type
+            mdblQuantityTotal = mdblQuantityTotal + IIf(IsNull(!Quantity), 0, !Quantity)
+            
+            Me.fldGross = IIf(IsNull(![Gross Weight]), 0, ![Gross Weight])
+            mdblGrossTotal = mdblGrossTotal + IIf(IsNull(![Gross Weight]), 0, ![Gross Weight])
+            
+            Me.fldNet = IIf(IsNull(![Net Weight]), 0, ![Net Weight])
+            mdblNetTotal = mdblNetTotal + IIf(IsNull(![Net Weight]), 0, ![Net Weight])
+            
+            Detail.PrintSection
+            
+            .MoveNext
+
+        Else
+            InsertTotal
+'            fldQuantityTotal.Text = mdblQuantityTotal
+'            fldGrossTotal.Text = Format(mdblGrossTotal, "0.000")
+'            fldNetTotal.Text = Format(mdblNetTotal, "0.00")
+            Exit Sub
+        End If
+        
+    End With
+End Sub
+Private Sub ActiveReport_ReportEnd()
+    mrst.Close
+    
+    Set mrst = Nothing
+    
+    'drop tables
+    On Error Resume Next
+    mconSADBEL.Execute "DROP TABLE tblCtryOrigin" & "_" & Format(m_lngUserID, "00")
+    'mconHistory.Execute "DROP TABLE tblProdStock" & "_" & Format(m_lngUserID, "00")
+    mconHistory.Execute "DROP TABLE tblInboundOutbound" & "_" & Format(m_lngUserID, "00")
+    On Error GoTo 0
+    
+    mconHistory.Close
+    
+    Set mconHistory = Nothing
+    
+End Sub
+
+Friend Property Get FilterID() As Long
+    FilterID = mlngFilterID
+End Property
+
+Friend Property Let FilterID(ByVal lngFilterID As Long)
+    mlngFilterID = lngFilterID
+End Property
+
+Friend Property Get Connection() As ADODB.Connection
+    Connection = mconSADBEL
+End Property
+
+Friend Property Set Connection(ByVal conConnection As ADODB.Connection)
+    Set mconSADBEL = conConnection
+End Property
+
+'Friend Property Get PeriodFrom() As Date
+'    PeriodFrom = mdtmPeriodFrom
+'End Property
+
+'Friend Property Let PeriodFrom(ByVal dtmPeriodFrom As Date)
+'    mdtmPeriodFrom = dtmPeriodFrom
+'End Property
+
+Friend Property Get PeriodTo() As Date
+    PeriodTo = mdtmPeriodTo
+End Property
+
+Friend Property Let PeriodTo(ByVal dtmPeriodTo As Date)
+    mdtmPeriodTo = dtmPeriodTo
+End Property
+
+Friend Property Get AppVersion() As String
+    AppVersion = mstrAppVersion
+End Property
+
+Friend Property Let AppVersion(ByVal strAppVersion As String)
+    mstrAppVersion = strAppVersion
+End Property
+
+Friend Property Get LicenseeName() As String
+    LicenseeName = mstrLicenseeName
+End Property
+
+Friend Property Let LicenseeName(ByVal strLicenseeName As String)
+    mstrLicenseeName = strLicenseeName
+End Property
+
+Friend Property Let LicCompanyName(ByVal strLicCompanyName As String)
+    mstrLicCompanyName = strLicCompanyName
+End Property
+
+Friend Property Get LicCompanyName() As String
+    LicCompanyName = mstrLicCompanyName
+End Property
+
+Friend Property Let LicIsDemo(ByVal blnIsDemo As Boolean)
+    mblnIsDemo = blnIsDemo
+End Property
+
+Friend Property Get LicIsDemo() As Boolean
+    LicIsDemo = mblnIsDemo
+End Property
+
+Friend Property Get Language() As String
+    Language = mstrLanguage
+End Property
+
+Friend Property Let Language(ByVal strLanguage As String)
+    mstrLanguage = strLanguage
+End Property
+
+Friend Property Get MDBPath() As String
+    MDBPath = mstrMDBPath
+End Property
+
+Friend Property Let MDBPath(ByVal strMDBpath As String)
+    mstrMDBPath = strMDBpath
+End Property
+
+Friend Property Let ShowZeroStocks(ByVal blnShowZeroStocks As Boolean)
+    m_blnShowZeroStocks = blnShowZeroStocks
+End Property
+
+Private Sub CreateTempTables()
+    Dim strCommand As String
+    Dim strHistoryToUse As String
+    Dim blnIsHistoryDBExisting  As Boolean
+    Dim dbCheck As DAO.Database
+    Dim tblCheck As DAO.TableDef
+    Dim blnTableExists As Boolean
+    
+    
+    blnIsHistoryDBExisting = False
+    If (Len(Dir(mstrMDBPath & "\mdb_history" & Right(Year(Now), 2) & ".mdb")) > 0) Then
+        strHistoryToUse = "mdb_history" & Right(Year(Now), 2) & ".mdb"
+        blnIsHistoryDBExisting = True
+    Else
+        strHistoryToUse = "mdb_history" & Right(Year(Now) - 1, 2) & ".mdb"
+        If (Len(Dir(mstrMDBPath & "\mdb_history" & Right(Year(Now) - 1, 2) & ".mdb")) > 0) Then
+            blnIsHistoryDBExisting = True
+        End If
+    End If
+    
+    
+    If (blnIsHistoryDBExisting = True) Then
+        ' Step 1:   Create tblCtryOrigin in mdb_sadbel
+        
+            ' 1.1: Delete any existing table tblCtryOrigin in mdb_sadbel
+            DropTableADODAO mconSADBEL, mstrMDBPath, "mdb_sadbel.mdb", "tblCtryOrigin" & "_" & Format(m_lngUserID, "00")
+                    
+            ' 1.2: Recreate table tblCtryOrigin in mdb_sadbel
+                strCommand = ""
+                strCommand = strCommand & "SELECT "
+                strCommand = strCommand & "CODE, "
+                strCommand = strCommand & "[DESCRIPTION " & mstrLanguage & "] AS Description "
+                strCommand = strCommand & "INTO "
+                strCommand = strCommand & "tblCtryOrigin" & "_" & Format(m_lngUserID, "00") & " "
+                strCommand = strCommand & "FROM "
+                strCommand = strCommand & "[PICKLIST MAINTENANCE " & mstrLanguage & "] " ' allanent nov7 "_" & Format(m_lngUserID, "00") & "] "
+                strCommand = strCommand & "WHERE "
+                strCommand = strCommand & "[INTERNAL CODE] = '8.29801619052887E+19'"
+            CreateTableADODAO mconSADBEL, mstrMDBPath, "mdb_sadbel.mdb", "tblCtryOrigin" & "_" & Format(m_lngUserID, "00"), strCommand
+        
+        ' Step 2: Create tblProdStock in all history databases
+            Create_tblProdStockFromSADBELIntoAllHistoryDBs
+
+        
+        ' Step 3:   Drop the existing table AllInboundsOutbounds_mlngUserID from
+        '           the Latest History mdb (Cuurent Year = strHistoryToUse)
+            Set mconHistory = New ADODB.Connection
+            mconHistory.ConnectionString = "Provider=Microsoft.Jet.OLEDB.4.0;Data Source=" & mstrMDBPath & "\" & strHistoryToUse & ";Persist Security Info=False;Jet OLEDB:Database Password=" & G_Main_Password
+            mconHistory.Open
+            
+                DropTableADODAO mconHistory, mstrMDBPath, strHistoryToUse, "AllInboundsOutbounds" & "_" & Format(m_lngUserID, "00")
+            
+            mconHistory.Close
+            Set mconHistory = Nothing
+        
+        ' Step 4:   Populate table AllInboundsOutbounds_mlngUserID of the Latest History mdb (Current Year = strHistoryToUse)
+        '           with Non-Zero Inbounds from Old History DBs
+            Set mconHistory = New ADODB.Connection
+            mconHistory.ConnectionString = "Provider=Microsoft.Jet.OLEDB.4.0;Data Source=" & mstrMDBPath & "\" & strHistoryToUse & ";Persist Security Info=False;Jet OLEDB:Database Password=" & G_Main_Password
+            mconHistory.Open
+            
+                InsertSummaryNonZeroInboundsFromOldHIstoryDBsToLatestHistoryDB mconHistory, strHistoryToUse
+                
+                mconHistory.Close
+                mconHistory.Open
+                
+                If IsTableExisting(mstrMDBPath, strHistoryToUse, "AllNonZeroInbounds" & "_" & Format(m_lngUserID, "00")) Then
+                    DropTableADODAO mconHistory, mstrMDBPath, strHistoryToUse, "AllNonZeroInbounds" & "_" & Format(m_lngUserID, "00")
+                End If
+                
+                mconHistory.Close
+                mconHistory.Open
+                
+                InsertAllNonZeroInboundsFromOldHIstoryDBsToLatestHistoryDB mconHistory, strHistoryToUse
+                
+            mconHistory.Close
+            Set mconHistory = Nothing
+        
+        ' Step 5:   Create a Linked-Tables of All Non-Zero Inbounds from AllInboundsOutbounds into all Hisotry DBs
+            Set mconHistory = New ADODB.Connection
+            mconHistory.ConnectionString = "Provider=Microsoft.Jet.OLEDB.4.0;Data Source=" & mstrMDBPath & "\" & strHistoryToUse & ";Persist Security Info=False;Jet OLEDB:Database Password=" & G_Main_Password
+            mconHistory.Open
+            
+                CreateCopyOfAllNonZeroInboundsInAllHistoryDBs mconHistory, strHistoryToUse
+                
+            mconHistory.Close
+            Set mconHistory = Nothing
+            
+        ' Step 6:   Populate table AllInboundsOutbounds_mlngUserID of the Latest History mdb (Current Year = strHistoryToUse)
+        '           with Outbounds of Non-Zero Inbounds from Old History DBs
+            Set mconHistory = New ADODB.Connection
+            mconHistory.ConnectionString = "Provider=Microsoft.Jet.OLEDB.4.0;Data Source=" & mstrMDBPath & "\" & strHistoryToUse & ";Persist Security Info=False;Jet OLEDB:Database Password=" & G_Main_Password
+            mconHistory.Open
+            
+                InsertAllOutboundsForNonZeroInboundsFromOldHIstoryDBsToLatestHistoryDB mconHistory, strHistoryToUse
+            
+            mconHistory.Close
+            Set mconHistory = Nothing
+            
+        ' Step 7:   Drop Linked-Tables of All Non-Zero Inbounds from AllInboundsOutbounds from all Hisotry DBs
+            Set mconHistory = New ADODB.Connection
+            mconHistory.ConnectionString = "Provider=Microsoft.Jet.OLEDB.4.0;Data Source=" & mstrMDBPath & "\" & strHistoryToUse & ";Persist Security Info=False;Jet OLEDB:Database Password=" & G_Main_Password
+            mconHistory.Open
+            
+                'DropCopyOfAllNonZeroInboundsInAllHistoryDBs mconHistory, strHistoryToUse
+                
+            mconHistory.Close
+            Set mconHistory = Nothing
+            
+                
+        ' Step 4:   Populate table tblInboundOutbound_mlngUserID of the Latest History mdb (Cuurent Year = strHistoryToUse)
+        '           with non-zero Inbounds found in the Latest History mdb (Cuurent Year = strHistoryToUse)
+        
+'''''            Set mconHistory = New ADODB.Connection
+'''''            mconHistory.ConnectionString = "Provider=Microsoft.Jet.OLEDB.4.0;Data Source=" & mstrMDBPath & "\" & strHistoryToUse & ";Persist Security Info=False;Jet OLEDB:Database Password=" & G_Main_Password
+'''''            mconHistory.Open
+'''''
+'''''                strCommand = vbNullString
+'''''                strCommand = strCommand & "SELECT "
+'''''                strCommand = strCommand & "Prod_Num, "
+'''''                strCommand = strCommand & "Stock_Card_Num, "
+'''''                strCommand = strCommand & "Prod_Desc, "
+'''''                strCommand = strCommand & "Origin_Ctry_Desc, "
+'''''                strCommand = strCommand & "Export_Ctry_Desc, "
+'''''                strCommand = strCommand & "SUM(In_Orig_Packages_Qty) AS Quantity, "
+'''''                strCommand = strCommand & "Format(SUM(In_Orig_Gross_Weight),'0.000') AS [Gross Weight], "
+'''''                strCommand = strCommand & "Format(SUM(In_Orig_Net_Weight),'0.00') AS [Net Weight], "
+'''''                strCommand = strCommand & "In_Orig_Packages_Type as Packages_Type "
+'''''                strCommand = strCommand & "INTO "
+'''''                strCommand = strCommand & "tblInboundOutbound" & "_" & Format(m_lngUserID, "00") & " "
+'''''                strCommand = strCommand & "FROM "
+'''''                strCommand = strCommand & "Inbounds "
+'''''                strCommand = strCommand & "INNER JOIN "
+'''''                strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & " "
+'''''                strCommand = strCommand & "ON "
+'''''                strCommand = strCommand & "Inbounds.Stock_ID = tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Stock_ID "
+'''''                strCommand = strCommand & "WHERE "
+'''''                strCommand = strCommand & "IIF(ISNULL(Inbounds!In_Code), '', Inbounds!In_Code) NOT LIKE '%<<CLOSURE>>' "
+'''''                strCommand = strCommand & "AND "
+'''''                strCommand = strCommand & "IIF(ISNULL(Inbounds!In_Code),'',Inbounds!In_Code) NOT LIKE '%<<TEST>>' "
+'''''                strCommand = strCommand & "AND "
+'''''                strCommand = strCommand & "Inbounds.In_Orig_Packages_Qty >= 0  "
+'''''                strCommand = strCommand & "AND "
+'''''                strCommand = strCommand & "Inbounds.In_Avl_Qty_Wgt >= 0  "
+'''''                strCommand = strCommand & "GROUP BY "
+'''''                strCommand = strCommand & "Prod_Num, "
+'''''                strCommand = strCommand & "Prod_Desc, "
+'''''                strCommand = strCommand & "Stock_Card_Num, "
+'''''                strCommand = strCommand & "Origin_Ctry_Desc, "
+'''''                strCommand = strCommand & "Export_Ctry_Desc, "
+'''''                strCommand = strCommand & "In_Orig_Packages_Type "
+'''''                strCommand = strCommand & "ORDER BY "
+'''''                strCommand = strCommand & "Clng(Stock_Card_Num), "
+'''''                strCommand = strCommand & "Prod_Num "
+'''''            CreateTableADODAO mconHistory, mstrMDBPath, strHistoryToUse, "tblInboundOutbound" & "_" & Format(m_lngUserID, "00"), strCommand
+'''''
+'''''            mconHistory.Close
+'''''            Set mconHistory = Nothing
+            
+        ' --------------
+        ' OLD STEP 4
+        ' Step 4: Create table tblInbounds in the latest history mdb (strHistoryToUse)
+            ' the records coming from the Inbounds table of the latest history db
+'                strCommand = vbNullString
+'                strCommand = strCommand & "SELECT "
+'                strCommand = strCommand & "* "
+'                strCommand = strCommand & "INTO "
+'                strCommand = strCommand & "tblAllInbounds" & "_" & Format(m_lngUserID, "00") & " "
+'                strCommand = strCommand & "FROM "
+'                strCommand = strCommand & "Inbounds "
+'                strCommand = strCommand & "WHERE "
+'                strCommand = strCommand & "IIF(ISNULL(Inbounds!In_Code), '', Inbounds!In_Code) NOT LIKE '%<<CLOSURE>>' "
+'                strCommand = strCommand & "AND "
+'                strCommand = strCommand & "IIF(ISNULL(Inbounds!In_Code), '', Inbounds!In_Code) NOT LIKE '%<<TEST>>'"
+'            CreateTableADODAO mconHistory, mstrMDBPath, strHistoryToUse, "tblInbounds" & "_" & Format(m_lngUserID, "00"), strCommand
+        ' OLD STEP 4
+        ' --------------
+            
+'''''        ' Step 4: Create table tblInbounds from the past history mdbs
+'''''            'Create_tblInboundsFromPastHistoryDBs strHistoryToUse
+'''''
+'''''            'mconHistory.Close
+'''''            'mconHistory.Open
+                            
+                            
+        ' Step 5: Create tblInboundOutbound
+        
+            ' b. Insert Outbound Records
+'            Get_All_OutboundsInHistory mconHistory, strHistoryToUse
+        
+            ' Delete table tblInbounds from Latest History DB
+'            DropTableADODAO mconHistory, mstrMDBPath, strHistoryToUse, "tblInbounds" & "_" & Format(m_lngUserID, "00")
+            
+        ' Step 8: ' Prepare recordset to be used by the Carry Over Stock Report
+            Set mconHistory = New ADODB.Connection
+            mconHistory.ConnectionString = "Provider=Microsoft.Jet.OLEDB.4.0;Data Source=" & mstrMDBPath & "\" & strHistoryToUse & ";Persist Security Info=False;Jet OLEDB:Database Password=" & G_Main_Password
+            mconHistory.Open
+            
+                Set mrst = New ADODB.Recordset
+                mrst.CursorLocation = adUseClient
+                    strCommand = vbNullString
+                    strCommand = strCommand & "SELECT "
+                    strCommand = strCommand & "Prod_Num, "
+                    strCommand = strCommand & "Stock_Card_Num, "
+                    strCommand = strCommand & "Prod_Desc, "
+                    strCommand = strCommand & "Origin_Ctry_Desc, "
+                    strCommand = strCommand & "Export_Ctry_Desc, "
+                    strCommand = strCommand & "SUM(Quantity) AS Quantity, "
+                    strCommand = strCommand & "Format(Sum([Gross Weight]), '0.000') AS [Gross Weight], "
+                    strCommand = strCommand & "Format(Sum([Net Weight]), '0.00') AS [Net Weight], "
+                    strCommand = strCommand & "Packages_Type "
+                    strCommand = strCommand & "FROM "
+                    strCommand = strCommand & "AllInboundsOutbounds" & "_" & Format(m_lngUserID, "00") & " "
+                    strCommand = strCommand & "GROUP BY "
+                    strCommand = strCommand & "Prod_Num, "
+                    strCommand = strCommand & "Stock_Card_Num, "
+                    strCommand = strCommand & "Prod_Desc, "
+                    strCommand = strCommand & "Origin_Ctry_Desc, "
+                    strCommand = strCommand & "Export_Ctry_Desc, "
+                    strCommand = strCommand & "Packages_Type "
+                    strCommand = strCommand & "HAVING "
+                    
+                    '<<< dandan 111407
+                    'Added checking for allo zero stocks consideration
+                    If (m_blnShowZeroStocks = True) Then
+                        strCommand = strCommand & "Sum(Quantity) >= 0 "
+                        strCommand = strCommand & "AND "
+                        strCommand = strCommand & "Sum([Gross Weight]) >= 0 "
+                    Else
+                        strCommand = strCommand & "Sum(Quantity) > 0 "
+                        strCommand = strCommand & "AND "
+                        strCommand = strCommand & "Sum([Gross Weight]) > 0 "
+                    
+                    End If
+                    
+                    strCommand = strCommand & "AND "
+                    strCommand = strCommand & "Sum([Net Weight]) >= 0 "
+                    strCommand = strCommand & "ORDER BY "
+                    strCommand = strCommand & "CLng(Stock_Card_Num), Prod_Num"
+                    
+                mrst.Open strCommand, mconHistory, adOpenKeyset, adLockReadOnly
+                Set mrst.ActiveConnection = Nothing
+    Else
+        MsgBox "No Summary of CarryOver Stock Report to show.", vbInformation
+        Me.Cancel
+    End If
+End Sub
+
+Private Sub mconHistory_ConnectComplete(ByVal pError As ADODB.Error, adStatus As ADODB.EventStatusEnum, ByVal pConnection As ADODB.Connection)
+    mblnExecuteDone = True
+End Sub
+
+Private Sub mconHistory_ExecuteComplete(ByVal RecordsAffected As Long, ByVal pError As ADODB.Error, adStatus As ADODB.EventStatusEnum, ByVal pCommand As ADODB.Command, ByVal pRecordset As ADODB.Recordset, ByVal pConnection As ADODB.Connection)
+    mblnExecuteDone = True
+End Sub
+
+Private Sub mconSADBEL_ConnectComplete(ByVal pError As ADODB.Error, adStatus As ADODB.EventStatusEnum, ByVal pConnection As ADODB.Connection)
+    mblnExecuteDone = True
+End Sub
+
+Private Sub mconSADBEL_ExecuteComplete(ByVal RecordsAffected As Long, ByVal pError As ADODB.Error, adStatus As ADODB.EventStatusEnum, ByVal pCommand As ADODB.Command, ByVal pRecordset As ADODB.Recordset, ByVal pConnection As ADODB.Connection)
+    mblnExecuteDone = True
+End Sub
+
+
+Private Sub FillAuthorization()
+    
+    Dim rstAuthorization As ADODB.Recordset
+    Dim strSQL As String
+    
+    strSQL = "SELECT Auth_Name, Auth_Address, Auth_City, Auth_PostalCode, Auth_Country, Entrepot_Type, Entrepot_Num" & _
+             " FROM AuthorizedParties INNER JOIN Entrepots" & _
+             " ON AuthorizedParties.Auth_ID = Entrepots.Auth_ID" & _
+             " WHERE Entrepot_ID = " & mlngFilterID
+    
+    Set rstAuthorization = New ADODB.Recordset
+    
+    rstAuthorization.Open strSQL, mconSADBEL, adOpenForwardOnly, adLockReadOnly
+    
+    With rstAuthorization
+        If Not .EOF Then
+            fldAuthorizedPartyName.Text = IIf(IsNull(.Fields("Auth_Name").Value), "", Trim(.Fields("Auth_Name").Value))
+            
+            fldAuthorizedPartyAddress.Height = Label1.Top - fldAuthorizedPartyAddress.Top
+            
+            ' Omit authorized party country if authorized party name = licensee name
+            If StrComp(fldAuthorizedPartyName.Text, mstrLicenseeName, vbTextCompare) = 0 Then
+                fldAuthorizedPartyAddress.Text = IIf(IsNull(.Fields("Auth_Address").Value), "", Trim(.Fields("Auth_Address").Value)) & vbCrLf & _
+                                                 IIf(IsNull(.Fields("Auth_PostalCode").Value), "", Trim(.Fields("Auth_PostalCode").Value)) & " " & IIf(IsNull(.Fields("Auth_City").Value), "", UCase(Trim(.Fields("Auth_City").Value)))
+                
+                If UBound(Split(fldAuthorizedPartyAddress.Text, vbCrLf)) > 2 Then
+                    fldAuthorizedPartyAddress.Font.Size = 5
+                End If
+            Else
+                fldAuthorizedPartyAddress.Text = IIf(IsNull(.Fields("Auth_Address").Value), "", Trim(.Fields("Auth_Address").Value)) & vbCrLf & _
+                                                 IIf(IsNull(.Fields("Auth_PostalCode").Value), "", Trim(.Fields("Auth_PostalCode").Value)) & " " & IIf(IsNull(.Fields("Auth_City").Value), "", UCase(Trim(.Fields("Auth_City").Value))) & vbCrLf & _
+                                                 IIf(IsNull(.Fields("Auth_Country").Value), "", UCase(Trim(.Fields("Auth_Country").Value)))
+                
+                If UBound(Split(fldAuthorizedPartyAddress.Text, vbCrLf)) > 2 Then
+                    fldAuthorizedPartyAddress.Font.Size = 5
+                End If
+            End If
+            
+            fldAuthorizedPartyPostCodeCity.Visible = False
+            fldAuthorizedPartyCountry.Visible = False
+            
+            fldEntrepotType.Text = IIf(IsNull(.Fields("Entrepot_Type").Value), "", Trim(.Fields("Entrepot_Type").Value))
+            fldEntrepotNum.Text = IIf(IsNull(.Fields("Entrepot_Num").Value), "", Trim(.Fields("Entrepot_Num").Value))
+            
+            fldPeriodTo.Text = mdtmPeriodTo
+        End If
+        
+        .Close
+    End With
+
+    Set rstAuthorization = Nothing
+    
+End Sub
+
+Public Sub ResetFields()
+    Me.fldQuantity.Text = ""
+    Me.fldGross.Text = ""
+    Me.fldNet.Text = ""
+    
+    Me.fldQuantityTotal.Text = ""
+    Me.fldGrossTotal.Text = ""
+    Me.fldNetTotal.Text = ""
+    
+    Me.fldCountryOfExport.Text = ""
+    Me.fldCtryOfOrigin.Text = ""
+    Me.fldProdDesc.Text = ""
+    Me.fldProdNum.Text = ""
+    Me.fldStockCardNum = ""
+
+End Sub
+
+
+
+Private Sub FormatFields()
+    Me.fldQuantity.OutputFormat = "0"
+    Me.fldGross.OutputFormat = "0.000"
+    Me.fldNet.OutputFormat = "0.00"
+    
+    Me.fldQuantityTotal.OutputFormat = "0"
+    Me.fldGrossTotal.OutputFormat = "0.000"
+    Me.fldNetTotal.OutputFormat = "0.00"
+
+End Sub
+
+Private Sub Create_tblInboundsFromPastHistoryDBs(ByVal HistoryDBUsed As String)
+    Dim strDB As String
+    Dim strCommand As String
+    
+    Dim astrHistoryDBs() As String
+    Dim lngDBCtr As Long
+    Dim blnFirst As Boolean
+    Dim blnFinishedStorage As Boolean
+    
+    Dim conTmpHistory As ADODB.Connection
+    
+    blnFirst = True
+    blnFinishedStorage = False
+    lngDBCtr = 0
+        
+    ' Store all history DBs except the latest
+    Do While Not blnFinishedStorage
+        If blnFirst Then
+            strDB = Dir(mstrMDBPath & "\mdb_history??.mdb")
+            blnFirst = False
+        Else
+            strDB = Dir
+        End If
+
+        If LenB(Trim$(strDB)) > 0 Then
+            If Trim$(UCase$(strDB)) <> Trim$(UCase$(HistoryDBUsed)) Then
+                ReDim Preserve astrHistoryDBs(1 To lngDBCtr + 1)
+                                
+                astrHistoryDBs(UBound(astrHistoryDBs)) = strDB
+                
+                lngDBCtr = lngDBCtr + 1
+            End If
+        Else
+            blnFinishedStorage = True
+        End If
+    Loop
+    
+    On Error GoTo ErrHandler
+    For lngDBCtr = 1 To UBound(astrHistoryDBs)
+        strDB = astrHistoryDBs(lngDBCtr)
+        
+        mconHistory.Close
+        
+        mblnExecuteDone = False
+        mconHistory.Open
+        Do Until mblnExecuteDone = True
+        Loop
+                
+        
+        'AddLinkedTableEx "MDB_TABLE_INBOUNDS", mconHistory.Properties.Item("Data Source Name").Value, G_Main_Password, "Inbounds", mstrMDBPath & "\" & strDB, G_Main_Password
+        AddLinkedTableEx Replace(strDB, ".mdb", vbNullString) & "_Inbounds" & "_" & Format(m_lngUserID, "00"), mconHistory.Properties.Item("Data Source Name").Value, G_Main_Password, "Inbounds", mstrMDBPath & "\" & strDB, G_Main_Password
+        
+        ' Close then open conenction to make sure the linked table is already added
+        mconHistory.Close
+        
+        mblnExecuteDone = False
+        mconHistory.Open
+        Do Until mblnExecuteDone = True
+        Loop
+                
+        ' Insert records of Inbounds table from the current history db to the latest history db
+            strCommand = vbNullString
+            If IsTableExisting(mstrMDBPath, HistoryDBUsed, "tblAllInbounds" & "_" & Format(m_lngUserID, "00")) Then
+                strCommand = strCommand & "INSERT INTO "
+                strCommand = strCommand & "tblAllInbounds" & "_" & Format(m_lngUserID, "00") & " "
+            End If
+            strCommand = strCommand & "SELECT "
+            strCommand = strCommand & "* "
+            If Not IsTableExisting(mstrMDBPath, HistoryDBUsed, "tblAllInbounds" & "_" & Format(m_lngUserID, "00")) Then
+                strCommand = strCommand & "INTO "
+                strCommand = strCommand & "tblAllInbounds" & "_" & Format(m_lngUserID, "00") & " "
+            End If
+            strCommand = strCommand & "FROM "
+            strCommand = strCommand & Replace(strDB, ".mdb", vbNullString) & "_Inbounds" & "_" & Format(m_lngUserID, "00") & " "
+            strCommand = strCommand & "WHERE "
+            strCommand = strCommand & "IIF(ISNULL(In_Code), '', In_Code) NOT LIKE '%<<CLOSURE>>' "
+            strCommand = strCommand & "AND "
+            strCommand = strCommand & "IIF(ISNULL(In_Code), '', In_Code) NOT LIKE '%<<TEST>>'"
+        mconHistory.Execute strCommand
+        'CreateTableADODAO mconHistory, mstrMDBPath, HistoryDBUsed, "tblInbounds" & "_" & Format(m_lngUserID, "00"), strCommand
+                                        
+        ' We need to put .Close and .Open because sometimes tblInboundOutbound is sometimes not yet
+        ' created by the time Get_All_OutboundsInHistory is called
+        mconHistory.Close
+        mconHistory.Open
+        
+        
+        
+'        Set conTmpHistory = New ADODB.Connection
+'        conTmpHistory.ConnectionString = "Provider=Microsoft.Jet.OLEDB.4.0;Data Source=" & mstrMDBPath & "\" & strDB & ";Persist Security Info=False;Jet OLEDB:Database Password=" & G_Main_Password
+'        conTmpHistory.Open
+'
+'        If IsTableExisting(mstrMDBPath, strDB, "tblInboundOutbound" & "_" & Format(m_lngUserID, "00")) Then
+'            On Error GoTo 0
+'            conTmpHistory.Execute "DROP TABLE " & "tblInboundOutbound" & "_" & Format(m_lngUserID, "00")
+'            On Error GoTo 0
+'        End If
+'
+''            ' a. Insert Inbound Records into SUMMARY TABLE tblInboundOutbound in the Latest History Database
+''            ' Rachelle added exclusion of Test Docs 092205 ok 1
+'                strCommand = vbNullString
+'                strCommand = strCommand & "SELECT "
+'                strCommand = strCommand & "Prod_Num, "
+'                strCommand = strCommand & "Stock_Card_Num, "
+'                strCommand = strCommand & "Prod_Desc, "
+'                strCommand = strCommand & "Origin_Ctry_Desc, "
+'                strCommand = strCommand & "Export_Ctry_Desc, "
+'                strCommand = strCommand & "SUM(In_Orig_Packages_Qty) AS Quantity, "
+'                strCommand = strCommand & "Format(SUM(In_Orig_Gross_Weight), '0.000') AS [Gross Weight], "
+'                strCommand = strCommand & "Format(SUM(In_Orig_Net_Weight), '0.00') AS [Net Weight], "
+'                strCommand = strCommand & "In_Orig_Packages_Type AS Packages_Type "
+'                strCommand = strCommand & "INTO "
+'                strCommand = strCommand & "tblInboundOutbound" & "_" & Format(m_lngUserID, "00") & " "
+'                strCommand = strCommand & "FROM "
+'                strCommand = strCommand & "Inbounds INNER JOIN tblProdStock" & "_" & Format(m_lngUserID, "00") & " "
+'                strCommand = strCommand & "ON Inbounds.Stock_ID = tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Stock_ID "
+'                strCommand = strCommand & "WHERE "
+'                strCommand = strCommand & "IIf(IsNull(Inbounds!In_Code), '', Inbounds!In_Code) NOT LIKE '%<<CLOSURE>>' "
+'                strCommand = strCommand & "AND "
+'                strCommand = strCommand & "IIf(IsNull(Inbounds!In_Code), '', Inbounds!In_Code) NOT LIKE '%<<TEST>>' "
+'                strCommand = strCommand & "AND "
+'                strCommand = strCommand & "Inbounds.In_Orig_Packages_Qty >= 0  "
+'                'strCommand = strCommand & "AND "
+'                'strCommand = strCommand & "Inbounds.In_Avl_Qty_Wgt >= 0  "
+'                strCommand = strCommand & "GROUP BY "
+'                strCommand = strCommand & "Prod_Num, "
+'                strCommand = strCommand & "Prod_Desc, "
+'                strCommand = strCommand & "Stock_Card_Num, "
+'                strCommand = strCommand & "Origin_Ctry_Desc, "
+'                strCommand = strCommand & "Export_Ctry_Desc, "
+'                strCommand = strCommand & "In_Orig_Packages_Type "
+'                strCommand = strCommand & "ORDER BY "
+'                strCommand = strCommand & "CLng(Stock_Card_Num), "
+'                strCommand = strCommand & "Prod_Num"
+'            conTmpHistory.Execute strCommand
+'
+'        On Error Resume Next
+'        conTmpHistory.Close
+'        Set conTmpHistory = Nothing
+        On Error GoTo 0
+        
+        
+            'CreateTableADODAO mconHistory, mstrMDBPath, strHistoryToUse, "tblInboundOutbound" & "_" & Format(m_lngUserID, "00"), strCommand
+    Next lngDBCtr
+    On Error GoTo 0
+    
+    mconHistory.Close
+        
+    mblnExecuteDone = False
+    mconHistory.Open
+    Do Until mblnExecuteDone = True
+    Loop
+            
+    For lngDBCtr = 1 To UBound(astrHistoryDBs)
+        strDB = astrHistoryDBs(lngDBCtr)
+        
+        ' Delete linked tables created
+        DropTableADODAO mconHistory, mstrMDBPath, HistoryDBUsed, Replace(strDB, ".mdb", vbNullString) & "_Inbounds" & "_" & Format(m_lngUserID, "00")
+    Next lngDBCtr
+    
+    Exit Sub
+    
+ErrHandler:
+    If (Err.Number = 9) Then
+        On Error GoTo 0
+        Exit Sub
+    End If
+End Sub
+
+Private Sub Create_tblProdStockFromSADBELIntoAllHistoryDBs()
+    Dim strCommand As String
+    Dim strDB As String
+    Dim lngDBCtr As Long
+    Dim blnFirst As Boolean
+    Dim blnFinishedStorage As Boolean
+    
+    Dim astrHistoryDBs() As String
+    
+    
+    ' Store All History DBs into an Array
+    blnFirst = True
+    blnFinishedStorage = False
+    lngDBCtr = 0
+    
+    Do While Not blnFinishedStorage
+        If blnFirst Then
+            strDB = Dir(mstrMDBPath & "\mdb_history??.mdb")
+            blnFirst = False
+        Else
+            strDB = Dir
+        End If
+
+        If LenB(Trim$(strDB)) > 0 Then
+            ReDim Preserve astrHistoryDBs(1 To lngDBCtr + 1)
+                                
+            astrHistoryDBs(UBound(astrHistoryDBs)) = strDB
+                
+            lngDBCtr = lngDBCtr + 1
+        Else
+            blnFinishedStorage = True
+        End If
+    Loop
+        
+    Set mconTmpHistoryWithExecteDoneEvent = New ADODB.Connection
+    
+    For lngDBCtr = 1 To UBound(astrHistoryDBs)
+        strDB = astrHistoryDBs(lngDBCtr)
+        
+        ' Open an ADO connection to the history db
+        Set mconTmpHistoryWithExecteDoneEvent = New ADODB.Connection
+        mconTmpHistoryWithExecteDoneEvent.ConnectionString = "Provider=Microsoft.Jet.OLEDB.4.0;Data Source=" & mstrMDBPath & "\" & strDB & ";Persist Security Info=False;Jet OLEDB:Database Password=" & G_Main_Password
+        mconTmpHistoryWithExecteDoneEvent.Open
+        
+        ' Create linked tables to the history db first (tables from mdb_sadbel)
+        AddLinkedTableEx "StockCards" & "_" & Format(m_lngUserID, "00"), mstrMDBPath & "\" & strDB, G_Main_Password, "StockCards", mstrMDBPath & "\mdb_sadbel.mdb", G_Main_Password
+        AddLinkedTableEx "Products" & "_" & Format(m_lngUserID, "00"), mstrMDBPath & "\" & strDB, G_Main_Password, "Products", mstrMDBPath & "\mdb_sadbel.mdb", G_Main_Password
+        AddLinkedTableEx "PICKLIST MAINTENANCE " & UCase(mstrLanguage) & "_" & Format(m_lngUserID, "00"), mstrMDBPath & "\" & strDB, G_Main_Password, "PICKLIST MAINTENANCE " & UCase(mstrLanguage), mstrMDBPath & "\mdb_sadbel.mdb", G_Main_Password
+        AddLinkedTableEx "tblCtryOrigin" & "_" & Format(m_lngUserID, "00"), mstrMDBPath & "\" & strDB, G_Main_Password, "tblCtryOrigin" & "_" & Format(m_lngUserID, "00"), mstrMDBPath & "\mdb_sadbel.mdb", G_Main_Password
+        
+        ' Close then open connection
+        mconTmpHistoryWithExecteDoneEvent.Close
+        
+        mblnExecuteDone = False
+        mconTmpHistoryWithExecteDoneEvent.Open
+        Do Until mblnExecuteDone = True
+        Loop
+                
+        ' Delete table tblProdStock in the Latest History db
+        DropTableADODAO mconTmpHistoryWithExecteDoneEvent, mstrMDBPath, strDB, "tblProdStock" & "_" & Format(m_lngUserID, "00")
+                
+        ' Temporarily create table tblProdStock in Latest History DB
+            strCommand = vbNullString
+            strCommand = strCommand & "SELECT "
+            strCommand = strCommand & "Prod_Num, "
+            strCommand = strCommand & "Stock_ID, "
+            strCommand = strCommand & "Stock_Card_Num, "
+            strCommand = strCommand & "Prod_Desc, "
+            strCommand = strCommand & "tblCtryOrigin" & "_" & Format(m_lngUserID, "00") & ".Description AS Origin_Ctry_Desc, "
+            strCommand = strCommand & "Pick.[DESCRIPTION " & mstrLanguage & "] AS Export_Ctry_Desc, "
+            strCommand = strCommand & "Prod_Handling "
+            strCommand = strCommand & "INTO "
+            strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & " "
+            strCommand = strCommand & "FROM "
+            strCommand = strCommand & "StockCards" & "_" & Format(m_lngUserID, "00") & " "
+            strCommand = strCommand & "INNER JOIN "
+                strCommand = strCommand & "( "
+                    strCommand = strCommand & "( "
+                    strCommand = strCommand & "Products" & "_" & Format(m_lngUserID, "00") & " "
+                    strCommand = strCommand & "INNER JOIN "
+                    strCommand = strCommand & "[PICKLIST MAINTENANCE " & mstrLanguage & "_" & Format(m_lngUserID, "00") & "] AS Pick "
+                    strCommand = strCommand & "ON "
+                    strCommand = strCommand & "Products" & "_" & Format(m_lngUserID, "00") & ".Prod_Ctry_Export = Pick.Code "
+                    strCommand = strCommand & ") "
+                strCommand = strCommand & "INNER JOIN "
+                strCommand = strCommand & "tblCtryOrigin" & "_" & Format(m_lngUserID, "00") & " "
+                strCommand = strCommand & "ON "
+                strCommand = strCommand & "Products" & "_" & Format(m_lngUserID, "00") & ".Prod_Ctry_Origin = tblCtryOrigin" & "_" & Format(m_lngUserID, "00") & ".Code "
+                strCommand = strCommand & ") "
+            strCommand = strCommand & "ON "
+            strCommand = strCommand & "StockCards" & "_" & Format(m_lngUserID, "00") & ".Prod_ID = Products" & "_" & Format(m_lngUserID, "00") & ".Prod_ID "
+            strCommand = strCommand & "WHERE "
+            strCommand = strCommand & "[INTERNAL CODE] = '8.29801619052887E+19' "
+            strCommand = strCommand & "AND "
+            strCommand = strCommand & "Entrepot_ID = " & mlngFilterID
+        
+        mblnExecuteDone = False
+        mconTmpHistoryWithExecteDoneEvent.Execute strCommand
+        Do Until mblnExecuteDone = True
+        Loop
+                
+        ' Delete the linked tables in the history db
+        DropTableADODAO mconTmpHistoryWithExecteDoneEvent, mstrMDBPath, strDB, "StockCards" & "_" & Format(m_lngUserID, "00")
+        DropTableADODAO mconTmpHistoryWithExecteDoneEvent, mstrMDBPath, strDB, "Products" & "_" & Format(m_lngUserID, "00")
+        DropTableADODAO mconTmpHistoryWithExecteDoneEvent, mstrMDBPath, strDB, "[PICKLIST MAINTENANCE " & mstrLanguage & "_" & Format(m_lngUserID, "00") & "]"
+        DropTableADODAO mconTmpHistoryWithExecteDoneEvent, mstrMDBPath, strDB, "tblCtryOrigin" & "_" & Format(m_lngUserID, "00")
+                
+        ' Close connection to the history db
+        mconTmpHistoryWithExecteDoneEvent.Close
+        Set mconTmpHistoryWithExecteDoneEvent = Nothing
+    Next lngDBCtr
+    
+    Set mconTmpHistoryWithExecteDoneEvent = Nothing
+        
+    ' Delete contents of array to save memory space
+    Erase astrHistoryDBs
+End Sub
+
+Private Sub Get_All_OutboundsInHistory(ByRef DestinationHistoryDB As ADODB.Connection, _
+                                        ByVal strHistoryDestination As String)
+    Dim strCommand As String
+    Dim strDB As String
+    
+    Dim astrHistoryDBs() As String
+    Dim lngDBCtr As Long
+    Dim blnFirst As Boolean
+    Dim blnFinishedStorage As Boolean
+
+    ' Store all history dbs
+    blnFirst = True
+    blnFinishedStorage = False
+    lngDBCtr = 0
+    
+    Do While Not blnFinishedStorage
+        If blnFirst Then
+            strDB = Dir(mstrMDBPath & "\mdb_history??.mdb")
+            blnFirst = False
+        Else
+            strDB = Dir
+        End If
+
+        If LenB(Trim$(strDB)) > 0 Then
+            ReDim Preserve astrHistoryDBs(1 To lngDBCtr + 1)
+                                
+            astrHistoryDBs(UBound(astrHistoryDBs)) = strDB
+                
+            lngDBCtr = lngDBCtr + 1
+        Else
+            blnFinishedStorage = True
+        End If
+    Loop
+    
+    Dim conTmpKiki As ADODB.Connection
+    Set conTmpKiki = New ADODB.Connection
+    For lngDBCtr = 1 To UBound(astrHistoryDBs)
+        strDB = astrHistoryDBs(lngDBCtr)
+                            
+        conTmpKiki.ConnectionString = "Provider=Microsoft.Jet.OLEDB.4.0;Data Source=" & mstrMDBPath & "\" & strDB & ";Persist Security Info=False;Jet OLEDB:Database Password=" & G_Main_Password
+        conTmpKiki.Open
+        
+        On Error Resume Next
+        conTmpKiki.Execute "DROP TABLE " & "tblInboundOutbound" & "_" & Format(m_lngUserID, "00")
+        On Error GoTo 0
+        
+        conTmpKiki.Close
+        
+    Next
+    Set conTmpKiki = Nothing
+    
+    Set mconTmpHistoryWithExecteDoneEvent = New ADODB.Connection
+    For lngDBCtr = 1 To UBound(astrHistoryDBs)
+        strDB = astrHistoryDBs(lngDBCtr)
+                
+        mconTmpHistoryWithExecteDoneEvent.ConnectionString = "Provider=Microsoft.Jet.OLEDB.4.0;Data Source=" & mstrMDBPath & "\" & strDB & ";Persist Security Info=False;Jet OLEDB:Database Password=" & G_Main_Password
+        mconTmpHistoryWithExecteDoneEvent.Open
+        
+        AddLinkedTableEx "tblInbounds" & "_" & Format(m_lngUserID, "00"), mstrMDBPath & "\" & strDB, G_Main_Password, "tblAllInbounds" & "_" & Format(m_lngUserID, "00"), mstrMDBPath & "\" & strHistoryDestination, G_Main_Password
+        
+        ' Create linked tables tblInbounds and tblInboundOutbound from the Latest History DB
+        'AddLinkedTableEx "tblInbounds" & "_" & Format(m_lngUserID, "00"), mstrMDBPath & "\" & strDB, G_Main_Password, "tblInbounds", mstrMDBPath & "\" & strHistoryDestination, G_Main_Password
+        'AddLinkedTableEx "tblInboundOutbound" & "_" & Format(m_lngUserID, "00"), mstrMDBPath & "\" & strDB, G_Main_Password, "tblInboundOutbound", mstrMDBPath & "\" & strHistoryDestination, G_Main_Password
+        
+                
+        mconTmpHistoryWithExecteDoneEvent.Close
+        
+        mblnExecuteDone = False
+        mconTmpHistoryWithExecteDoneEvent.Open
+        Do Until mblnExecuteDone = True
+        Loop
+                
+        ' a.
+        'If (UCase(strDB) <> UCase(strHistoryDestination)) Then
+                strCommand = vbNullString
+                If IsTableExisting(mstrMDBPath, strHistoryDestination, "tblInboundOutbound" & "_" & Format(m_lngUserID, "00")) Then
+                    strCommand = strCommand & "INSERT INTO "
+                    strCommand = strCommand & "tblInboundOutbound" & "_" & Format(m_lngUserID, "00") & " "
+                End If
+                strCommand = strCommand & "SELECT "
+                strCommand = strCommand & "Prod_Num, "
+                strCommand = strCommand & "Stock_Card_Num, "
+                strCommand = strCommand & "Prod_Desc, "
+                strCommand = strCommand & "Origin_Ctry_Desc, "
+                strCommand = strCommand & "Export_Ctry_Desc, "
+                strCommand = strCommand & "SUM(In_Orig_Packages_Qty) AS Quantity, "
+                strCommand = strCommand & "Format(SUM(In_Orig_Gross_Weight),'0.000') AS [Gross Weight], "
+                strCommand = strCommand & "Format(SUM(In_Orig_Net_Weight),'0.00') AS [Net Weight], "
+                strCommand = strCommand & "In_Orig_Packages_Type as Packages_Type "
+                If Not IsTableExisting(mstrMDBPath, strHistoryDestination, "tblInboundOutbound" & "_" & Format(m_lngUserID, "00")) Then
+                    strCommand = strCommand & "INTO "
+                    strCommand = strCommand & "tblInboundOutbound" & "_" & Format(m_lngUserID, "00") & " "
+                End If
+                strCommand = strCommand & "FROM "
+                strCommand = strCommand & "Inbounds "
+                strCommand = strCommand & "INNER JOIN "
+                strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & " "
+                strCommand = strCommand & "ON "
+                strCommand = strCommand & "Inbounds.Stock_ID = tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Stock_ID "
+                strCommand = strCommand & "WHERE "
+                strCommand = strCommand & "IIF(ISNULL(Inbounds!In_Code), '', Inbounds!In_Code) NOT LIKE '%<<CLOSURE>>' "
+                strCommand = strCommand & "AND "
+                strCommand = strCommand & "IIF(ISNULL(Inbounds!In_Code),'',Inbounds!In_Code) NOT LIKE '%<<TEST>>' "
+                strCommand = strCommand & "AND "
+                strCommand = strCommand & "Inbounds.In_Orig_Packages_Qty >= 0  "
+                'strCommand = strCommand & "AND "
+                'strCommand = strCommand & "Inbounds.In_Avl_Qty_Wgt >= 0  "
+                strCommand = strCommand & "GROUP BY "
+                strCommand = strCommand & "Prod_Num, "
+                strCommand = strCommand & "Prod_Desc, "
+                strCommand = strCommand & "Stock_Card_Num, "
+                strCommand = strCommand & "Origin_Ctry_Desc, "
+                strCommand = strCommand & "Export_Ctry_Desc, "
+                strCommand = strCommand & "In_Orig_Packages_Type "
+                strCommand = strCommand & "ORDER BY "
+                strCommand = strCommand & "Clng(Stock_Card_Num), "
+                strCommand = strCommand & "Prod_Num "
+
+            mblnExecuteDone = False
+            On Error Resume Next
+            mconTmpHistoryWithExecteDoneEvent.Execute strCommand
+            On Error GoTo 0
+            Do Until mblnExecuteDone = True
+            Loop
+        'End If
+        
+        ' b.
+            strCommand = vbNullString
+            If IsTableExisting(mstrMDBPath, strHistoryDestination, "tblInboundOutbound" & "_" & Format(m_lngUserID, "00")) Then
+                strCommand = strCommand & "INSERT INTO "
+                strCommand = strCommand & "tblInboundOutbound" & "_" & Format(m_lngUserID, "00") & " "
+            End If
+            
+            strCommand = strCommand & "SELECT "
+            strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Prod_Num, "
+            strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Stock_Card_Num, "
+            strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Prod_Desc, "
+            strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Origin_Ctry_Desc, "
+            strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Export_Ctry_Desc, "
+            strCommand = strCommand & "SUM(Out_Packages_Qty_Wgt) * -1 AS Quantity, "
+            strCommand = strCommand & "Format(SUM(Out_Packages_Qty_WgT*In_Orig_Gross_Weight/In_Orig_Packages_Qty),'0.000')*-1 as [Gross Weight], "
+            strCommand = strCommand & "Format(SUM(Out_Packages_Qty_WgT*In_Orig_Net_Weight/In_Orig_Packages_Qty),'0.00')*-1 as [Net Weight], "
+            strCommand = strCommand & "In_Orig_Packages_Type as Packages_Type "
+            If Not IsTableExisting(mstrMDBPath, strHistoryDestination, "tblInboundOutbound" & "_" & Format(m_lngUserID, "00")) Then
+                strCommand = strCommand & "INTO "
+                strCommand = strCommand & "tblInboundOutbound" & "_" & Format(m_lngUserID, "00") & " "
+            End If
+            strCommand = strCommand & "FROM "
+            strCommand = strCommand & "OutboundDocs AS OutDoc "
+            strCommand = strCommand & "INNER JOIN "
+                strCommand = strCommand & "( "
+                strCommand = strCommand & "Outbounds AS Out "
+                strCommand = strCommand & "INNER JOIN "
+                    strCommand = strCommand & "( "
+                    strCommand = strCommand & "tblInbounds" & "_" & Format(m_lngUserID, "00") & " "
+                    strCommand = strCommand & "INNER JOIN "
+                    strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & " "
+                    strCommand = strCommand & "ON "
+                    strCommand = strCommand & "tblInbounds" & "_" & Format(m_lngUserID, "00") & ".Stock_ID = tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Stock_ID "
+                    strCommand = strCommand & ") "
+                strCommand = strCommand & "ON "
+                strCommand = strCommand & "Out.In_ID = tblInbounds" & "_" & Format(m_lngUserID, "00") & ".In_ID "
+                strCommand = strCommand & ") "
+            strCommand = strCommand & "ON "
+            strCommand = strCommand & "OutDoc.OutDoc_ID = Out.OutDoc_ID "
+            strCommand = strCommand & "WHERE "
+            strCommand = strCommand & "DateValue([OutDoc].[OutDoc_Date]) <= DateValue('" & mdtmPeriodTo & "') "
+            strCommand = strCommand & "AND "
+            strCommand = strCommand & "tblInbounds" & "_" & Format(m_lngUserID, "00") & ".In_Orig_Packages_Qty >= 0 "
+            strCommand = strCommand & "AND "
+            strCommand = strCommand & "Prod_handling = 0 "
+            strCommand = strCommand & "AND "
+            strCommand = strCommand & "IIF(ISNULL(tblInbounds" & "_" & Format(m_lngUserID, "00") & ".In_Code),'',tblInbounds" & "_" & Format(m_lngUserID, "00") & ".In_Code) NOT LIKE '%<<CLOSURE>>' "
+            strCommand = strCommand & "AND "
+            strCommand = strCommand & "IIF(ISNULL(tblInbounds" & "_" & Format(m_lngUserID, "00") & ".In_Code),'',tblInbounds" & "_" & Format(m_lngUserID, "00") & ".In_Code) NOT LIKE '%<<TEST>>' "
+            strCommand = strCommand & "GROUP BY "
+            strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Prod_Num, "
+            strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Stock_Card_Num, "
+            strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Prod_Desc, "
+            strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Origin_Ctry_Desc, "
+            strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Export_Ctry_Desc, "
+            strCommand = strCommand & "In_Orig_Packages_Type "
+            strCommand = strCommand & "ORDER BY "
+            strCommand = strCommand & "CLng(Stock_Card_Num), "
+            strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Prod_Num "
+        
+        mblnExecuteDone = False
+        On Error Resume Next 'allanent nov7
+        mconTmpHistoryWithExecteDoneEvent.Execute strCommand
+        On Error GoTo 0
+        Do Until mblnExecuteDone = True
+        Loop
+        
+        ' c.
+            strCommand = vbNullString
+            If IsTableExisting(mstrMDBPath, strHistoryDestination, "tblInboundOutbound" & "_" & Format(m_lngUserID, "00")) Then
+                strCommand = strCommand & "INSERT INTO "
+                strCommand = strCommand & "tblInboundOutbound" & "_" & Format(m_lngUserID, "00") & " "
+            End If
+            strCommand = strCommand & "SELECT "
+            strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Prod_Num, "
+            strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Stock_Card_Num, "
+            strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Prod_Desc, "
+            strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Origin_Ctry_Desc, "
+            strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Export_Ctry_Desc, "
+            strCommand = strCommand & "FORMAT(SUM(Out_Packages_Qty_WgT*In_Orig_Packages_Qty/In_Orig_Gross_Weight),'0')*-1 AS Quantity, "
+            strCommand = strCommand & "FORMAT(SUM(Out_Packages_Qty_Wgt),'0.000') * -1 AS [Gross Weight], "
+            strCommand = strCommand & "FORMAT(SUM(Out_Packages_Qty_WgT*In_Orig_Net_Weight/In_Orig_Gross_Weight),'0.00')*-1 AS [Net Weight], "
+            strCommand = strCommand & "In_Orig_Packages_Type as Packages_Type "
+            If Not IsTableExisting(mstrMDBPath, strHistoryDestination, "tblInboundOutbound" & "_" & Format(m_lngUserID, "00")) Then
+                strCommand = strCommand & "INTO "
+                strCommand = strCommand & "tblInboundOutbound" & "_" & Format(m_lngUserID, "00") & " "
+            End If
+            strCommand = strCommand & "FROM "
+            strCommand = strCommand & "OutboundDocs AS OutDoc "
+            strCommand = strCommand & "INNER JOIN "
+                strCommand = strCommand & "( "
+                strCommand = strCommand & "Outbounds AS Out "
+                strCommand = strCommand & "INNER JOIN "
+                    strCommand = strCommand & "( "
+                    strCommand = strCommand & "tblInbounds" & "_" & Format(m_lngUserID, "00") & " "
+                    strCommand = strCommand & "INNER JOIN "
+                    strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & " "
+                    strCommand = strCommand & "ON "
+                    strCommand = strCommand & "tblInbounds" & "_" & Format(m_lngUserID, "00") & ".Stock_ID = tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Stock_ID "
+                    strCommand = strCommand & ") "
+                strCommand = strCommand & "ON "
+                strCommand = strCommand & "Out.In_ID = tblInbounds" & "_" & Format(m_lngUserID, "00") & ".In_ID "
+                strCommand = strCommand & ") "
+            strCommand = strCommand & "ON "
+            strCommand = strCommand & "OutDoc.OutDoc_ID = Out.OutDoc_ID "
+            strCommand = strCommand & "WHERE "
+            strCommand = strCommand & "DateValue([OutDoc].[OutDoc_Date]) <= DateValue('" & mdtmPeriodTo & "') "
+            strCommand = strCommand & "AND "
+            strCommand = strCommand & "tblInbounds.In_Orig_Packages_Qty >= 0 "
+            strCommand = strCommand & "AND "
+            strCommand = strCommand & "Prod_handling = 1 "
+            strCommand = strCommand & "AND "
+            strCommand = strCommand & "IIF(ISNULL(tblInbounds" & "_" & Format(m_lngUserID, "00") & ".In_Code),'',tblInbounds" & "_" & Format(m_lngUserID, "00") & ".In_Code) NOT LIKE '%<<CLOSURE>>' "
+            strCommand = strCommand & "AND "
+            strCommand = strCommand & "IIF(ISNULL(tblInbounds" & "_" & Format(m_lngUserID, "00") & ".In_Code),'',tblInbounds" & "_" & Format(m_lngUserID, "00") & ".In_Code) NOT LIKE '%<<TEST>>' "
+            strCommand = strCommand & "GROUP BY "
+            strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Prod_Num, "
+            strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Stock_Card_Num, "
+            strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Prod_Desc, "
+            strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Origin_Ctry_Desc, "
+            strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Export_Ctry_Desc, "
+            strCommand = strCommand & "In_Orig_Packages_Type "
+            strCommand = strCommand & "ORDER BY "
+            strCommand = strCommand & "CLng(Stock_Card_Num), "
+            strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Prod_Num "
+            
+        mblnExecuteDone = False
+        On Error Resume Next
+        mconTmpHistoryWithExecteDoneEvent.Execute strCommand
+        On Error GoTo 0
+        Do Until mblnExecuteDone = True
+        Loop
+        
+        ' d.
+            strCommand = vbNullString
+            If IsTableExisting(mstrMDBPath, strHistoryDestination, "tblInboundOutbound" & "_" & Format(m_lngUserID, "00")) Then
+                strCommand = strCommand & "INSERT INTO "
+                strCommand = strCommand & "tblInboundOutbound" & "_" & Format(m_lngUserID, "00") & " "
+            End If
+            strCommand = strCommand & "SELECT "
+            strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Prod_Num, "
+            strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Stock_Card_Num, "
+            strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Prod_Desc, "
+            strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Origin_Ctry_Desc, "
+            strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Export_Ctry_Desc, "
+            strCommand = strCommand & "FORMAT(SUM(Out_Packages_Qty_WgT*In_Orig_Packages_Qty/In_Orig_Net_Weight),'0')*-1 AS Quantity, "
+            strCommand = strCommand & "FORMAT(SUM(Out_Packages_Qty_WgT*In_Orig_Gross_Weight/In_Orig_Net_Weight),'0.000')*-1 AS [Gross Weight], "
+            strCommand = strCommand & "FORMAT(SUM(Out_Packages_Qty_Wgt),'0.00') * -1 AS [Net Weight], In_Orig_Packages_Type as Packages_Type "
+            If Not IsTableExisting(mstrMDBPath, strHistoryDestination, "tblInboundOutbound" & "_" & Format(m_lngUserID, "00")) Then
+                strCommand = strCommand & "INTO "
+                strCommand = strCommand & "tblInboundOutbound" & "_" & Format(m_lngUserID, "00") & " "
+            End If
+            strCommand = strCommand & "FROM "
+            strCommand = strCommand & "OutboundDocs AS OutDoc "
+            strCommand = strCommand & "INNER JOIN "
+                strCommand = strCommand & "( "
+                strCommand = strCommand & "Outbounds AS Out "
+                strCommand = strCommand & "INNER JOIN "
+                    strCommand = strCommand & "( "
+                    strCommand = strCommand & "tblInbounds" & "_" & Format(m_lngUserID, "00") & " "
+                    strCommand = strCommand & "INNER JOIN "
+                    strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & " "
+                    strCommand = strCommand & "ON "
+                    strCommand = strCommand & "tblInbounds" & "_" & Format(m_lngUserID, "00") & ".Stock_ID = tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Stock_ID "
+                    strCommand = strCommand & ") "
+                strCommand = strCommand & "ON "
+                strCommand = strCommand & "Out.In_ID = tblInbounds" & "_" & Format(m_lngUserID, "00") & ".In_ID "
+                strCommand = strCommand & ") "
+            strCommand = strCommand & "ON "
+            strCommand = strCommand & "OutDoc.OutDoc_ID = Out.OutDoc_ID "
+            strCommand = strCommand & "WHERE "
+            strCommand = strCommand & "DateValue([OutDoc].[OutDoc_Date]) <= DateValue('" & mdtmPeriodTo & "') "
+            strCommand = strCommand & "AND "
+            strCommand = strCommand & "tblInbounds" & "_" & Format(m_lngUserID, "00") & ".In_Orig_Packages_Qty >= 0 "
+            strCommand = strCommand & "AND "
+            strCommand = strCommand & "Prod_handling = 2  "
+            strCommand = strCommand & "AND "
+            strCommand = strCommand & "IIF(ISNULL(tblInbounds" & "_" & Format(m_lngUserID, "00") & ".In_Code),'',tblInbounds" & "_" & Format(m_lngUserID, "00") & ".In_Code) NOT LIKE '%<<CLOSURE>>' "
+            strCommand = strCommand & "AND "
+            strCommand = strCommand & "IIF(ISNULL(tblInbounds" & "_" & Format(m_lngUserID, "00") & ".In_Code),'',tblInbounds" & "_" & Format(m_lngUserID, "00") & ".In_Code) NOT LIKE '%<<TEST>>'  "
+            strCommand = strCommand & "AND "
+            strCommand = strCommand & "IIF(ISNULL(Out!Out_Code),'',Out!Out_Code) NOT LIKE '%<<CLOSURE>>' "
+            strCommand = strCommand & "AND "
+            strCommand = strCommand & "IIF(ISNULL(Out!Out_Code),'',Out!Out_Code) NOT LIKE '%<<TEST>>' "
+            strCommand = strCommand & "GROUP BY "
+            strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Prod_Num, "
+            strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Stock_Card_Num, "
+            strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Prod_Desc, "
+            strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Origin_Ctry_Desc, "
+            strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Export_Ctry_Desc, "
+            strCommand = strCommand & "In_Orig_Packages_Type "
+            strCommand = strCommand & "ORDER BY "
+            strCommand = strCommand & "CLng(Stock_Card_Num), "
+            strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Prod_Num "
+            
+        mblnExecuteDone = False
+        On Error Resume Next 'allanent nov7
+        mconTmpHistoryWithExecteDoneEvent.Execute strCommand
+        On Error GoTo 0
+        Do Until mblnExecuteDone = True
+        Loop
+        
+        AddLinkedTableEx Replace(strDB, ".mdb", vbNullString) & "_InboundOutbound" & "_" & Format(m_lngUserID, "00"), mstrMDBPath & "\" & strHistoryDestination, G_Main_Password, "tblInboundOutbound" & "_" & Format(m_lngUserID, "00"), mstrMDBPath & "\" & strDB, G_Main_Password
+            
+        DropTableADODAO mconTmpHistoryWithExecteDoneEvent, mstrMDBPath, strDB, "tblProdStock" & "_" & Format(m_lngUserID, "00")
+        
+        'If (UCase(strDB) <> UCase(strHistoryDestination)) Then
+            
+        'End If
+        
+        mconTmpHistoryWithExecteDoneEvent.Close
+    Next lngDBCtr
+                
+    
+    For lngDBCtr = 1 To UBound(astrHistoryDBs)
+        strDB = astrHistoryDBs(lngDBCtr)
+        
+        If IsTableExisting(mstrMDBPath, strHistoryDestination, Replace(strDB, ".mdb", vbNullString) & "_InboundOutbound" & "_" & Format(m_lngUserID, "00")) Then
+                strCommand = vbNullString
+                If IsTableExisting(mstrMDBPath, strHistoryDestination, "tblAllInboundOutbound" & "_" & Format(m_lngUserID, "00")) Then
+                    strCommand = strCommand & "INSERT INTO "
+                    strCommand = strCommand & "tblAllInboundOutbound" & "_" & Format(m_lngUserID, "00") & " "
+                End If
+                strCommand = strCommand & "SELECT "
+                strCommand = strCommand & "* "
+                If Not IsTableExisting(mstrMDBPath, strHistoryDestination, "tblAllInboundOutbound" & "_" & Format(m_lngUserID, "00")) Then
+                    strCommand = strCommand & "INTO "
+                    strCommand = strCommand & "tblAllInboundOutbound" & "_" & Format(m_lngUserID, "00") & " "
+                End If
+                strCommand = strCommand & "FROM "
+                strCommand = strCommand & Replace(strDB, ".mdb", vbNullString) & "_InboundOutbound" & "_" & Format(m_lngUserID, "00") & " "
+            DestinationHistoryDB.Execute strCommand
+        End If
+    Next
+        
+    For lngDBCtr = 1 To UBound(astrHistoryDBs)
+        strDB = astrHistoryDBs(lngDBCtr)
+                
+        mconTmpHistoryWithExecteDoneEvent.ConnectionString = "Provider=Microsoft.Jet.OLEDB.4.0;Data Source=" & mstrMDBPath & "\" & strDB & ";Persist Security Info=False;Jet OLEDB:Database Password=" & G_Main_Password
+        mconTmpHistoryWithExecteDoneEvent.Open
+        
+        On Error Resume Next
+        DestinationHistoryDB.Execute "DROP TABLE " & "tblInbounds" & "_" & Format(m_lngUserID, "00")
+        On Error GoTo 0
+        
+        On Error Resume Next
+        DestinationHistoryDB.Execute "DROP TABLE " & "tblInboundOutbound" & "_" & Format(m_lngUserID, "00")
+        On Error GoTo 0
+    
+        If IsTableExisting(mstrMDBPath, strHistoryDestination, Replace(strDB, ".mdb", vbNullString) & "_InboundOutbound" & "_" & Format(m_lngUserID, "00")) Then
+            On Error Resume Next
+            DestinationHistoryDB.Execute "DROP TABLE " & Replace(strDB, ".mdb", vbNullString) & "_InboundOutbound" & "_" & Format(m_lngUserID, "00")
+            On Error GoTo 0
+        End If
+        
+        mconTmpHistoryWithExecteDoneEvent.Close
+    Next
+    Set mconTmpHistoryWithExecteDoneEvent = Nothing
+End Sub
+
+
+Private Sub mconTmpHistoryWithExecteDoneEvent_ConnectComplete(ByVal pError As ADODB.Error, adStatus As ADODB.EventStatusEnum, ByVal pConnection As ADODB.Connection)
+    mblnExecuteDone = True
+End Sub
+
+Private Sub mconTmpHistoryWithExecteDoneEvent_ExecuteComplete(ByVal RecordsAffected As Long, ByVal pError As ADODB.Error, adStatus As ADODB.EventStatusEnum, ByVal pCommand As ADODB.Command, ByVal pRecordset As ADODB.Recordset, ByVal pConnection As ADODB.Connection)
+    mblnExecuteDone = True
+End Sub
+
+
+Private Sub InsertTotal()
+'    Dim rstSummation As ADODB.Recordset
+'    Dim strSQL As String
+'
+'    Set rstSummation = New ADODB.Recordset
+    '================= open main rst ==================================================
+'    strSQL = "SELECT SUM(Quantity) as Quantity, Format(Sum([Gross Weight]),'0.000') as [Gross Weight], Format(Sum([Net Weight]),'0.00') as [Net Weight], Packages_Type from  tblInboundOutbound" &  & "_" & Format(m_lngUserID, "00") & " " & _
+'                " GROUP BY Packages_Type "
+    
+'    rstSummation.Open strSQL, mconHistory, adOpenKeyset, adLockReadOnly
+    
+'    Do While Not rstSummation.EOF
+'        fldQuantityTotal.Text = fldQuantityTotal.Text & CStr(IIf(IsNull(rstSummation!Quantity), 0, rstSummation!Quantity)) & " " & IIf(IsNull(rstSummation!Packages_Type), "", rstSummation!Packages_Type) & vbCrLf
+        fldQuantityTotal.Text = mdblQuantityTotal
+'        fldGrossTotal.Text = fldGrossTotal.Text & CStr(IIf(IsNull(rstSummation![Gross Weight]), 0, rstSummation![Gross Weight])) & vbCrLf
+        fldGrossTotal.Text = Format(mdblGrossTotal, "0.000")
+'        fldNetTotal.Text = fldNetTotal.Text & CStr(IIf(IsNull(rstSummation![Net Weight]), 0, rstSummation![Net Weight])) & vbCrLf
+        fldNetTotal.Text = Format(mdblNetTotal, "0.00")
+        
+'        rstSummation.MoveNext
+'    Loop
+'    GroupFooter1.Height = (rstSummation.RecordCount * fldQuantityTotal.Height) + GroupFooter1.Height - 144  '->144 fldquantity.height
+    GroupFooter1.Height = fldQuantityTotal.Height + GroupFooter1.Height - 144
+'    rstSummation.Close
+'    Set rstSummation = Nothing
+    
+End Sub
+
+Private Sub TranslateLabels()
+
+    lblVoorraadfiche.Caption = UCase$(Translate(2329))
+    lblEntrepotType.Caption = UCase$(Translate(2317))
+    lblEntrepotNum.Caption = UCase$(Translate(2331))
+    lblPeriodFrom.Caption = UCase$(Translate(2055))
+    Label1.Caption = Translate(2323) 'Voorraadfiche nr. Artikelnummer
+    Label2.Caption = Translate(2324) 'Volgnr. Voorraad Fiche
+    Label4.Caption = Translate(2325) 'Omschrijving van het goed
+    Label5.Caption = Translate(2326) 'Land van Oorsprong
+    Label6.Caption = Translate(2327) 'Geo-fiscale zone van herkomst
+    Label7.Caption = Translate(841) 'Hoeveelheid
+    Label8.Caption = Translate(960) 'Gewicht bruto
+    Label9.Caption = Translate(918) 'Gewicht Netto
+  '  fldGrandTotal.Text = UCase$(Translate(2330))
+
+End Sub
+
+Private Sub DropTableADODAO(ByRef ADODatabase As ADODB.Connection, _
+                            ByVal DatabasePath As String, _
+                            ByVal DatabaseName As String, _
+                            ByVal TargetTable As String)
+    
+    Dim dbDAODatabase As DAO.Database
+    Dim tblCheck As DAO.TableDef
+    Dim blnTableExists As Boolean
+    
+    ' Delete Target Table
+    ' note: mblnExecuteDone is defined on module level
+    mblnExecuteDone = False
+    On Error Resume Next
+    ADODatabase.Execute "DROP TABLE " & TargetTable
+    If Not (Err.Number = -2147217865 Or Err.Number = 0) Then
+        Err.Raise Err.Number, Err.Source, Err.Description, Err.HelpFile, Err.HelpContext
+    ElseIf Err.Number = 0 Then
+        Do Until mblnExecuteDone = True
+        Loop
+    End If
+    On Error GoTo 0
+    
+        
+    blnTableExists = True
+    Do While blnTableExists
+        blnTableExists = False
+        OpenDAODatabase dbDAODatabase, DatabasePath, DatabaseName
+        For Each tblCheck In dbDAODatabase.TableDefs
+            If UCase$(Trim$(tblCheck.Name)) = UCase$(Trim$(TargetTable)) Then
+                ' Table has not been dropped yet
+                blnTableExists = True
+                Exit For
+            End If
+        Next
+        dbDAODatabase.Close
+    Loop
+End Sub
+
+Private Sub CreateTableADODAO(ByRef ADODatabase As ADODB.Connection, _
+                                ByVal DatabasePath As String, _
+                                ByVal DatabaseName As String, _
+                                ByVal TargetTable As String, _
+                                ByVal CreateTableCommand As String)
+        
+    Dim dbDAODatabase As DAO.Database
+    Dim tblCheck As DAO.TableDef
+    Dim blnTableExists As Boolean
+    
+    ' note: mblnExecuteDone is defined on module level
+    mblnExecuteDone = False
+    ADODatabase.Execute CreateTableCommand
+    Do Until mblnExecuteDone = True
+    Loop
+                    
+    ADODatabase.Close
+    ADODatabase.Open
+    
+    blnTableExists = False
+    Do While Not blnTableExists
+        OpenDAODatabase dbDAODatabase, DatabasePath, DatabaseName
+        For Each tblCheck In dbDAODatabase.TableDefs
+            If UCase$(Trim$(tblCheck.Name)) = UCase$(Trim$(TargetTable)) Then
+                ' Table has not been dropped yet
+                blnTableExists = True
+                Exit For
+            End If
+        Next
+        dbDAODatabase.Close
+    Loop
+End Sub
+
+Public Property Get UserID() As Long
+    UserID = m_lngUserID
+End Property
+
+Public Property Let UserID(ByVal Value As Long)
+    m_lngUserID = Value
+End Property
+
+Private Sub DropCopyOfAllNonZeroInboundsInAllHistoryDBs(ByRef DestinationHistoryDB As ADODB.Connection, _
+                                                         ByVal strHistoryDestination As String)
+    Dim strCommand As String
+    Dim strDB As String
+    
+    Dim astrHistoryDBs() As String
+    Dim lngDBCtr As Long
+    Dim blnFirst As Boolean
+    Dim blnFinishedStorage As Boolean
+
+    ' Store all history dbs
+    blnFirst = True
+    blnFinishedStorage = False
+    lngDBCtr = 0
+    
+    Do While Not blnFinishedStorage
+        If blnFirst Then
+            strDB = Dir(mstrMDBPath & "\mdb_history??.mdb")
+            blnFirst = False
+        Else
+            strDB = Dir
+        End If
+
+        If LenB(Trim$(strDB)) > 0 Then
+            ReDim Preserve astrHistoryDBs(1 To lngDBCtr + 1)
+                                
+            astrHistoryDBs(UBound(astrHistoryDBs)) = strDB
+                
+            lngDBCtr = lngDBCtr + 1
+        Else
+            blnFinishedStorage = True
+        End If
+    Loop
+    
+    For lngDBCtr = 1 To UBound(astrHistoryDBs)
+        strDB = astrHistoryDBs(lngDBCtr)
+                                
+        ' -------------------- '
+        ' DB CONNECTION - OPEN
+        ' -------------------- '
+        Set mconTmpHistoryWithExecteDoneEvent = New ADODB.Connection
+        mconTmpHistoryWithExecteDoneEvent.ConnectionString = "Provider=Microsoft.Jet.OLEDB.4.0;Data Source=" & mstrMDBPath & "\" & strDB & ";Persist Security Info=False;Jet OLEDB:Database Password=" & G_Main_Password
+        mconTmpHistoryWithExecteDoneEvent.Open
+                            
+        ' ------------------------------------------------------------------------------------------------- '
+        ' Create Linked Table of All Non-Zero Inbounds from Latest History DB (Already in AllInboundsOutbounds)
+        ' ------------------------------------------------------------------------------------------------- '
+            ' DROP Any Linked_Table AllInbounds_mlngUserID in the Old History DB
+            DropTableADODAO mconTmpHistoryWithExecteDoneEvent, mstrMDBPath, strDB, "tblAllNonZeroInbounds" & "_" & Format(m_lngUserID, "00")
+        
+        ' --------------------- '
+        ' DB CONNECTION - CLOSE
+        ' --------------------- '
+            mconTmpHistoryWithExecteDoneEvent.Close
+            Set mconTmpHistoryWithExecteDoneEvent = Nothing
+    Next lngDBCtr
+End Sub
+
+Private Sub CreateCopyOfAllNonZeroInboundsInAllHistoryDBs(ByRef DestinationHistoryDB As ADODB.Connection, _
+                                                         ByVal strHistoryDestination As String)
+    Dim strCommand As String
+    Dim strDB As String
+    
+    Dim astrHistoryDBs() As String
+    Dim lngDBCtr As Long
+    Dim blnFirst As Boolean
+    Dim blnFinishedStorage As Boolean
+
+    ' Store all history dbs
+    blnFirst = True
+    blnFinishedStorage = False
+    lngDBCtr = 0
+    
+    Do While Not blnFinishedStorage
+        If blnFirst Then
+            strDB = Dir(mstrMDBPath & "\mdb_history??.mdb")
+            blnFirst = False
+        Else
+            strDB = Dir
+        End If
+
+        If LenB(Trim$(strDB)) > 0 Then
+            ReDim Preserve astrHistoryDBs(1 To lngDBCtr + 1)
+                                
+            astrHistoryDBs(UBound(astrHistoryDBs)) = strDB
+                
+            lngDBCtr = lngDBCtr + 1
+        Else
+            blnFinishedStorage = True
+        End If
+    Loop
+    
+    For lngDBCtr = 1 To UBound(astrHistoryDBs)
+        strDB = astrHistoryDBs(lngDBCtr)
+                                
+        ' -------------------- '
+        ' DB CONNECTION - OPEN
+        ' -------------------- '
+        Set mconTmpHistoryWithExecteDoneEvent = New ADODB.Connection
+        mconTmpHistoryWithExecteDoneEvent.ConnectionString = "Provider=Microsoft.Jet.OLEDB.4.0;Data Source=" & mstrMDBPath & "\" & strDB & ";Persist Security Info=False;Jet OLEDB:Database Password=" & G_Main_Password
+        mconTmpHistoryWithExecteDoneEvent.Open
+                            
+        ' ------------------------------------------------------------------------------------------------- '
+        ' Create Linked Table of All Non-Zero Inbounds from Latest History DB (Already in AllInboundsOutbounds)
+        ' ------------------------------------------------------------------------------------------------- '
+            ' DROP Any Linked_Table AllNonZeroInbounds_mlngUserID in the Old History DB
+            DropTableADODAO mconTmpHistoryWithExecteDoneEvent, mstrMDBPath, strDB, "tblAllNonZeroInbounds" & "_" & Format(m_lngUserID, "00")
+                        
+            mconTmpHistoryWithExecteDoneEvent.Close
+            mconTmpHistoryWithExecteDoneEvent.Open
+            
+            ' Create Linked-Table of All Non-Zero Inbounds from Latest History DB in Old History DB
+            AddLinkedTableEx "tblAllNonZeroInbounds" & "_" & Format(m_lngUserID, "00"), mstrMDBPath & "\" & strDB, G_Main_Password, "AllNonZeroInbounds" & "_" & Format(m_lngUserID, "00"), mstrMDBPath & "\" & strHistoryDestination, G_Main_Password
+        
+            mconTmpHistoryWithExecteDoneEvent.Close
+            mconTmpHistoryWithExecteDoneEvent.Open
+            
+        ' --------------------- '
+        ' DB CONNECTION - CLOSE
+        ' --------------------- '
+            mconTmpHistoryWithExecteDoneEvent.Close
+            Set mconTmpHistoryWithExecteDoneEvent = Nothing
+    Next lngDBCtr
+End Sub
+
+Private Sub InsertAllOutboundsForNonZeroInboundsFromOldHIstoryDBsToLatestHistoryDB(ByRef DestinationHistoryDB As ADODB.Connection, _
+                                                                        ByVal strHistoryDestination As String)
+    Dim strCommand As String
+    Dim strDB As String
+    
+    Dim astrHistoryDBs() As String
+    Dim lngDBCtr As Long
+    Dim blnFirst As Boolean
+    Dim blnFinishedStorage As Boolean
+
+    ' Store all history dbs
+    blnFirst = True
+    blnFinishedStorage = False
+    lngDBCtr = 0
+    
+    Do While Not blnFinishedStorage
+        If blnFirst Then
+            strDB = Dir(mstrMDBPath & "\mdb_history??.mdb")
+            blnFirst = False
+        Else
+            strDB = Dir
+        End If
+
+        If LenB(Trim$(strDB)) > 0 Then
+            ReDim Preserve astrHistoryDBs(1 To lngDBCtr + 1)
+                                
+            astrHistoryDBs(UBound(astrHistoryDBs)) = strDB
+                
+            lngDBCtr = lngDBCtr + 1
+        Else
+            blnFinishedStorage = True
+        End If
+    Loop
+    
+    For lngDBCtr = 1 To UBound(astrHistoryDBs)
+        strDB = astrHistoryDBs(lngDBCtr)
+        
+        ' -------------------- '
+        ' DB CONNECTION - OPEN
+        ' -------------------- '
+        Set mconTmpHistoryWithExecteDoneEvent = New ADODB.Connection
+        mconTmpHistoryWithExecteDoneEvent.ConnectionString = "Provider=Microsoft.Jet.OLEDB.4.0;Data Source=" & mstrMDBPath & "\" & strDB & ";Persist Security Info=False;Jet OLEDB:Database Password=" & G_Main_Password
+        mconTmpHistoryWithExecteDoneEvent.Open
+        
+            ' --------------- '
+            ' START of PART_A === "tblOutbounds" & "_" & Format(m_lngUserID, "00")
+            ' --------------- '
+                ' DROP Any existing tblOutbounds_mlngUserID in the Old History DB
+                DropTableADODAO mconTmpHistoryWithExecteDoneEvent, mstrMDBPath, strDB, "tblOutbounds" & "_" & Format(m_lngUserID, "00")
+                                    
+                    mconTmpHistoryWithExecteDoneEvent.Close
+                    mconTmpHistoryWithExecteDoneEvent.Open
+                    
+                ' ---------------------------------------------------- '
+                ' START - Insert All Outbounds of Product Handling = 0
+                ' ---------------------------------------------------- '
+                        strCommand = vbNullString
+                        If IsTableExisting(mstrMDBPath, strDB, "tblOutbounds" & "_" & Format(m_lngUserID, "00")) Then
+                            strCommand = strCommand & "INSERT INTO "
+                            strCommand = strCommand & "tblOutbounds" & "_" & Format(m_lngUserID, "00") & " "
+                        End If
+                        strCommand = strCommand & "SELECT "
+                        strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Prod_Num, "
+                        strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Stock_Card_Num, "
+                        strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Prod_Desc, "
+                        strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Origin_Ctry_Desc, "
+                        strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Export_Ctry_Desc, "
+                        strCommand = strCommand & "SUM(Out_Packages_Qty_Wgt) * -1 AS Quantity, "
+                        strCommand = strCommand & "Format(SUM(Out_Packages_Qty_WgT*In_Orig_Gross_Weight/In_Orig_Packages_Qty),'0.000')*-1 as [Gross Weight], "
+                        strCommand = strCommand & "Format(SUM(Out_Packages_Qty_WgT*In_Orig_Net_Weight/In_Orig_Packages_Qty),'0.00')*-1 as [Net Weight], "
+                        strCommand = strCommand & "In_Orig_Packages_Type as Packages_Type "
+                        If Not IsTableExisting(mstrMDBPath, strDB, "tblOutbounds" & "_" & Format(m_lngUserID, "00")) Then
+                            strCommand = strCommand & "INTO "
+                            strCommand = strCommand & "tblOutbounds" & "_" & Format(m_lngUserID, "00") & " "
+                        End If
+                        strCommand = strCommand & "FROM "
+                        strCommand = strCommand & "OutboundDocs AS OutDoc "
+                        strCommand = strCommand & "INNER JOIN "
+                            strCommand = strCommand & "( "
+                            strCommand = strCommand & "Outbounds AS Out "
+                            strCommand = strCommand & "INNER JOIN "
+                                strCommand = strCommand & "( "
+                                strCommand = strCommand & "tblAllNonZeroInbounds" & "_" & Format(m_lngUserID, "00") & " "
+                                strCommand = strCommand & "INNER JOIN "
+                                strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & " "
+                                strCommand = strCommand & "ON "
+                                strCommand = strCommand & "tblAllNonZeroInbounds" & "_" & Format(m_lngUserID, "00") & ".Stock_ID = tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Stock_ID "
+                                strCommand = strCommand & ") "
+                            strCommand = strCommand & "ON "
+                            strCommand = strCommand & "Out.In_ID = tblAllNonZeroInbounds" & "_" & Format(m_lngUserID, "00") & ".In_ID "
+                            strCommand = strCommand & ") "
+                        strCommand = strCommand & "ON "
+                        strCommand = strCommand & "OutDoc.OutDoc_ID = Out.OutDoc_ID "
+                        strCommand = strCommand & "WHERE "
+                        strCommand = strCommand & "DateValue([OutDoc].[OutDoc_Date]) <= DateValue('" & mdtmPeriodTo & "') "
+                        strCommand = strCommand & "AND "
+                        strCommand = strCommand & "tblAllNonZeroInbounds" & "_" & Format(m_lngUserID, "00") & ".In_Orig_Packages_Qty >= 0 "
+                        strCommand = strCommand & "AND "
+                        strCommand = strCommand & "Prod_handling = 0 "
+                        strCommand = strCommand & "AND "
+                        strCommand = strCommand & "UCASE(RIGHT(IIF(ISNULL(tblAllNonZeroInbounds" & "_" & Format(m_lngUserID, "00") & ".In_Code),'',tblAllNonZeroInbounds" & "_" & Format(m_lngUserID, "00") & ".In_Code), 11)) NOT LIKE '<<CLOSURE>>' "
+                        strCommand = strCommand & "AND "
+                        strCommand = strCommand & "UCASE(RIGHT(IIF(ISNULL(tblAllNonZeroInbounds" & "_" & Format(m_lngUserID, "00") & ".In_Code),'',tblAllNonZeroInbounds" & "_" & Format(m_lngUserID, "00") & ".In_Code), 8)) NOT LIKE '<<TEST>>' "
+                        strCommand = strCommand & "GROUP BY "
+                        strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Prod_Num, "
+                        strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Stock_Card_Num, "
+                        strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Prod_Desc, "
+                        strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Origin_Ctry_Desc, "
+                        strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Export_Ctry_Desc, "
+                        strCommand = strCommand & "In_Orig_Packages_Type "
+                        strCommand = strCommand & "ORDER BY "
+                        strCommand = strCommand & "CLng(tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Stock_Card_Num), "
+                        strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Prod_Num "
+                    
+                    mblnExecuteDone = False
+                    On Error Resume Next 'allanent nov7
+                    mconTmpHistoryWithExecteDoneEvent.Execute strCommand
+                    On Error GoTo 0
+                    Do Until mblnExecuteDone = True
+                    Loop
+                    
+                    mconTmpHistoryWithExecteDoneEvent.Close
+                    mconTmpHistoryWithExecteDoneEvent.Open
+                ' -------------------------------------------------- '
+                ' END - Insert All Outbounds of Product Handling = 0
+                ' -------------------------------------------------- '
+                
+                ' ---------------------------------------------------- '
+                ' START - Insert All Outbounds of Product Handling = 1
+                ' ---------------------------------------------------- '
+                        strCommand = vbNullString
+                        If IsTableExisting(mstrMDBPath, strDB, "tblOutbounds" & "_" & Format(m_lngUserID, "00")) Then
+                            strCommand = strCommand & "INSERT INTO "
+                            strCommand = strCommand & "tblOutbounds" & "_" & Format(m_lngUserID, "00") & " "
+                        End If
+                        strCommand = strCommand & "SELECT "
+                        strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Prod_Num, "
+                        strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Stock_Card_Num, "
+                        strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Prod_Desc, "
+                        strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Origin_Ctry_Desc, "
+                        strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Export_Ctry_Desc, "
+                        strCommand = strCommand & "SUM(Out_Packages_Qty_Wgt) * -1 AS Quantity, "
+                        strCommand = strCommand & "Format(SUM(Out_Packages_Qty_WgT*In_Orig_Gross_Weight/In_Orig_Packages_Qty),'0.000')*-1 as [Gross Weight], "
+                        strCommand = strCommand & "Format(SUM(Out_Packages_Qty_WgT*In_Orig_Net_Weight/In_Orig_Packages_Qty),'0.00')*-1 as [Net Weight], "
+                        strCommand = strCommand & "In_Orig_Packages_Type as Packages_Type "
+                        If Not IsTableExisting(mstrMDBPath, strDB, "tblOutbounds" & "_" & Format(m_lngUserID, "00")) Then
+                            strCommand = strCommand & "INTO "
+                            strCommand = strCommand & "tblOutbounds" & "_" & Format(m_lngUserID, "00") & " "
+                        End If
+                        strCommand = strCommand & "FROM "
+                        strCommand = strCommand & "OutboundDocs AS OutDoc "
+                        strCommand = strCommand & "INNER JOIN "
+                            strCommand = strCommand & "( "
+                            strCommand = strCommand & "Outbounds AS Out "
+                            strCommand = strCommand & "INNER JOIN "
+                                strCommand = strCommand & "( "
+                                strCommand = strCommand & "tblAllNonZeroInbounds" & "_" & Format(m_lngUserID, "00") & " "
+                                strCommand = strCommand & "INNER JOIN "
+                                strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & " "
+                                strCommand = strCommand & "ON "
+                                strCommand = strCommand & "tblAllNonZeroInbounds" & "_" & Format(m_lngUserID, "00") & ".Stock_ID = tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Stock_ID "
+                                strCommand = strCommand & ") "
+                            strCommand = strCommand & "ON "
+                            strCommand = strCommand & "Out.In_ID = tblAllNonZeroInbounds" & "_" & Format(m_lngUserID, "00") & ".In_ID "
+                            strCommand = strCommand & ") "
+                        strCommand = strCommand & "ON "
+                        strCommand = strCommand & "OutDoc.OutDoc_ID = Out.OutDoc_ID "
+                        strCommand = strCommand & "WHERE "
+                        strCommand = strCommand & "DateValue([OutDoc].[OutDoc_Date]) <= DateValue('" & mdtmPeriodTo & "') "
+                        strCommand = strCommand & "AND "
+                        strCommand = strCommand & "tblAllNonZeroInbounds" & "_" & Format(m_lngUserID, "00") & ".In_Orig_Packages_Qty >= 0 "
+                        strCommand = strCommand & "AND "
+                        strCommand = strCommand & "Prod_handling = 1 "
+                        strCommand = strCommand & "AND "
+                        strCommand = strCommand & "UCASE(RIGHT(IIF(ISNULL(tblAllNonZeroInbounds" & "_" & Format(m_lngUserID, "00") & ".In_Code),'',tblAllNonZeroInbounds" & "_" & Format(m_lngUserID, "00") & ".In_Code), 11)) NOT LIKE '<<CLOSURE>>' "
+                        strCommand = strCommand & "AND "
+                        strCommand = strCommand & "UCASE(RIGHT(IIF(ISNULL(tblAllNonZeroInbounds" & "_" & Format(m_lngUserID, "00") & ".In_Code),'',tblAllNonZeroInbounds" & "_" & Format(m_lngUserID, "00") & ".In_Code), 8)) NOT LIKE '<<TEST>>' "
+                        strCommand = strCommand & "GROUP BY "
+                        strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Prod_Num, "
+                        strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Stock_Card_Num, "
+                        strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Prod_Desc, "
+                        strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Origin_Ctry_Desc, "
+                        strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Export_Ctry_Desc, "
+                        strCommand = strCommand & "In_Orig_Packages_Type "
+                        strCommand = strCommand & "ORDER BY "
+                        strCommand = strCommand & "CLng(tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Stock_Card_Num), "
+                        strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Prod_Num "
+                    
+                    mblnExecuteDone = False
+                    On Error Resume Next 'allanent nov7
+                    mconTmpHistoryWithExecteDoneEvent.Execute strCommand
+                    On Error GoTo 0
+                    Do Until mblnExecuteDone = True
+                    Loop
+                    
+                    mconTmpHistoryWithExecteDoneEvent.Close
+                    mconTmpHistoryWithExecteDoneEvent.Open
+                ' -------------------------------------------------- '
+                ' END - Insert All Outbounds of Product Handling = 1
+                ' -------------------------------------------------- '
+                
+                ' ---------------------------------------------------- '
+                ' START - Insert All Outbounds of Product Handling = 2
+                ' ---------------------------------------------------- '
+                        strCommand = vbNullString
+                        If IsTableExisting(mstrMDBPath, strDB, "tblOutbounds" & "_" & Format(m_lngUserID, "00")) Then
+                            strCommand = strCommand & "INSERT INTO "
+                            strCommand = strCommand & "tblOutbounds" & "_" & Format(m_lngUserID, "00") & " "
+                        End If
+                        strCommand = strCommand & "SELECT "
+                        strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Prod_Num, "
+                        strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Stock_Card_Num, "
+                        strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Prod_Desc, "
+                        strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Origin_Ctry_Desc, "
+                        strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Export_Ctry_Desc, "
+                        strCommand = strCommand & "SUM(Out_Packages_Qty_Wgt) * -1 AS Quantity, "
+                        strCommand = strCommand & "Format(SUM(Out_Packages_Qty_WgT*In_Orig_Gross_Weight/In_Orig_Packages_Qty),'0.000')*-1 as [Gross Weight], "
+                        strCommand = strCommand & "Format(SUM(Out_Packages_Qty_WgT*In_Orig_Net_Weight/In_Orig_Packages_Qty),'0.00')*-1 as [Net Weight], "
+                        strCommand = strCommand & "In_Orig_Packages_Type as Packages_Type "
+                        If Not IsTableExisting(mstrMDBPath, strDB, "tblOutbounds" & "_" & Format(m_lngUserID, "00")) Then
+                            strCommand = strCommand & "INTO "
+                            strCommand = strCommand & "tblOutbounds" & "_" & Format(m_lngUserID, "00") & " "
+                        End If
+                        strCommand = strCommand & "FROM "
+                        strCommand = strCommand & "OutboundDocs AS OutDoc "
+                        strCommand = strCommand & "INNER JOIN "
+                            strCommand = strCommand & "( "
+                            strCommand = strCommand & "Outbounds AS Out "
+                            strCommand = strCommand & "INNER JOIN "
+                                strCommand = strCommand & "( "
+                                strCommand = strCommand & "tblAllNonZeroInbounds" & "_" & Format(m_lngUserID, "00") & " "
+                                strCommand = strCommand & "INNER JOIN "
+                                strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & " "
+                                strCommand = strCommand & "ON "
+                                strCommand = strCommand & "tblAllNonZeroInbounds" & "_" & Format(m_lngUserID, "00") & ".Stock_ID = tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Stock_ID "
+                                strCommand = strCommand & ") "
+                            strCommand = strCommand & "ON "
+                            strCommand = strCommand & "Out.In_ID = tblAllNonZeroInbounds" & "_" & Format(m_lngUserID, "00") & ".In_ID "
+                            strCommand = strCommand & ") "
+                        strCommand = strCommand & "ON "
+                        strCommand = strCommand & "OutDoc.OutDoc_ID = Out.OutDoc_ID "
+                        strCommand = strCommand & "WHERE "
+                        strCommand = strCommand & "DateValue([OutDoc].[OutDoc_Date]) <= DateValue('" & mdtmPeriodTo & "') "
+                        strCommand = strCommand & "AND "
+                        strCommand = strCommand & "tblAllNonZeroInbounds" & "_" & Format(m_lngUserID, "00") & ".In_Orig_Packages_Qty >= 0 "
+                        strCommand = strCommand & "AND "
+                        strCommand = strCommand & "Prod_handling = 2 "
+                        strCommand = strCommand & "AND "
+                        strCommand = strCommand & "UCASE(RIGHT(IIF(ISNULL(tblAllNonZeroInbounds" & "_" & Format(m_lngUserID, "00") & ".In_Code),'',tblAllNonZeroInbounds" & "_" & Format(m_lngUserID, "00") & ".In_Code), 11)) NOT LIKE '<<CLOSURE>>' "
+                        strCommand = strCommand & "AND "
+                        strCommand = strCommand & "UCASE(RIGHT(IIF(ISNULL(tblAllNonZeroInbounds" & "_" & Format(m_lngUserID, "00") & ".In_Code),'',tblAllNonZeroInbounds" & "_" & Format(m_lngUserID, "00") & ".In_Code), 8)) NOT LIKE '<<TEST>>' "
+                        strCommand = strCommand & "GROUP BY "
+                        strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Prod_Num, "
+                        strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Stock_Card_Num, "
+                        strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Prod_Desc, "
+                        strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Origin_Ctry_Desc, "
+                        strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Export_Ctry_Desc, "
+                        strCommand = strCommand & "In_Orig_Packages_Type "
+                        strCommand = strCommand & "ORDER BY "
+                        strCommand = strCommand & "CLng(tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Stock_Card_Num), "
+                        strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Prod_Num "
+                    
+                    mblnExecuteDone = False
+                    On Error Resume Next 'allanent nov7
+                    mconTmpHistoryWithExecteDoneEvent.Execute strCommand
+                    On Error GoTo 0
+                    Do Until mblnExecuteDone = True
+                    Loop
+                    
+                    mconTmpHistoryWithExecteDoneEvent.Close
+                    mconTmpHistoryWithExecteDoneEvent.Open
+                ' -------------------------------------------------- '
+                ' END - Insert All Outbounds of Product Handling = 2
+                ' -------------------------------------------------- '
+                            
+                ' --------------- '
+                ' START of PART_B === Replace(strDB, ".mdb", vbNullString) & "_Outbounds" & "_" & Format(m_lngUserID, "00")
+                ' --------------- '
+                If IsTableExisting(mstrMDBPath, strDB, "tblOutbounds" & "_" & Format(m_lngUserID, "00")) Then
+                
+                    ' DROP Any Linked_Table strDB_Outbounds_mlngUserID in the Old History DB
+                    DropTableADODAO DestinationHistoryDB, mstrMDBPath, strHistoryDestination, Replace(strDB, ".mdb", vbNullString) & "_Outbounds" & "_" & Format(m_lngUserID, "00")
+                                                        
+                    Do While Not IsTableExisting(mstrMDBPath, strHistoryDestination, Replace(strDB, ".mdb", vbNullString) & "_Outbounds" & "_" & Format(m_lngUserID, "00"))
+                            DestinationHistoryDB.Close
+                            DestinationHistoryDB.Open
+                            
+                        ' Create Linked-Table of Outbounds of Non-Zero Inbounds from Old History DB in Latest History DB
+                        AddLinkedTableEx Replace(strDB, ".mdb", vbNullString) & "_Outbounds" & "_" & Format(m_lngUserID, "00"), mstrMDBPath & "\" & strHistoryDestination, G_Main_Password, "tblOutbounds" & "_" & Format(m_lngUserID, "00"), mstrMDBPath & "\" & strDB, G_Main_Password
+                                                                
+                                                                
+                            DestinationHistoryDB.Close
+                            DestinationHistoryDB.Open
+                    Loop
+                    
+                    ' --------------- '
+                    ' START of PART_C === "AllInboundsOutbounds" & "_" & Format(m_lngUserID, "00")
+                    ' --------------- '
+                        If IsTableExisting(mstrMDBPath, strHistoryDestination, Replace(strDB, ".mdb", vbNullString) & "_Outbounds" & "_" & Format(m_lngUserID, "00")) Then
+                            ' Transfer Outbounds of Non-Zero Inbounds from Linked-Table into AllInboundsOutbounds_mlngUserID in Latest History DB
+                                strCommand = vbNullString
+                                If IsTableExisting(mstrMDBPath, strHistoryDestination, "AllInboundsOutbounds" & "_" & Format(m_lngUserID, "00")) Then
+                                    strCommand = strCommand & "INSERT INTO "
+                                    strCommand = strCommand & "AllInboundsOutbounds" & "_" & Format(m_lngUserID, "00") & " "
+                                End If
+                                strCommand = strCommand & "SELECT "
+                                strCommand = strCommand & "* "
+                                If Not IsTableExisting(mstrMDBPath, strHistoryDestination, "AllInboundsOutbounds" & "_" & Format(m_lngUserID, "00")) Then
+                                    strCommand = strCommand & "INTO "
+                                    strCommand = strCommand & "AllInboundsOutbounds" & "_" & Format(m_lngUserID, "00") & " "
+                                End If
+                                strCommand = strCommand & "FROM "
+                                strCommand = strCommand & Replace(strDB, ".mdb", vbNullString) & "_Outbounds" & "_" & Format(m_lngUserID, "00") & " "
+                            If Not IsTableExisting(mstrMDBPath, strHistoryDestination, "AllInboundsOutbounds" & "_" & Format(m_lngUserID, "00")) Then
+                                CreateTableADODAO DestinationHistoryDB, mstrMDBPath, strHistoryDestination, "AllInboundsOutbounds" & "_" & Format(m_lngUserID, "00"), strCommand
+                            Else
+                                mblnExecuteDone = False
+                                On Error Resume Next
+                                DestinationHistoryDB.Execute strCommand
+                                On Error GoTo 0
+                                Do Until mblnExecuteDone = True
+                                Loop
+                            End If
+                            
+                            DestinationHistoryDB.Close
+                            DestinationHistoryDB.Open
+                        End If
+                    ' ------------- '
+                    ' END of PART_C === "AllInboundsOutbounds" & "_" & Format(m_lngUserID, "00")
+                    ' ------------- '
+                    
+                End If
+                ' ------------- '
+                ' END of PART_B === === Replace(strDB, ".mdb", vbNullString) & "_Outbounds" & "_" & Format(m_lngUserID, "00")
+                ' ------------- '
+                    ' Drop the Linked Table of Outbounds of Non-Zero Inbounds from Latest History DB
+                    'DropTableADODAO DestinationHistoryDB, mstrMDBPath, strDB, Replace(strDB, ".mdb", vbNullString) & "_Outbounds" & "_" & Format(m_lngUserID, "00")
+                    
+            ' ------------- '
+            ' END of PART_A === "tblOutbounds" & "_" & Format(m_lngUserID, "00")
+            ' ------------- '
+                ' Drop tblOutbounds_mlngUserID from the Old History DB
+                'DropTableADODAO mconTmpHistoryWithExecteDoneEvent, mstrMDBPath, strDB, "tblOutbounds" & "_" & Format(m_lngUserID, "00")
+                
+        
+        ' --------------------- '
+        ' DB CONNECTION - CLOSE
+        ' --------------------- '
+            mconTmpHistoryWithExecteDoneEvent.Close
+            Set mconTmpHistoryWithExecteDoneEvent = Nothing
+    Next lngDBCtr
+End Sub
+
+Private Sub InsertAllNonZeroInboundsFromOldHIstoryDBsToLatestHistoryDB(ByRef DestinationHistoryDB As ADODB.Connection, _
+                                                                        ByVal strHistoryDestination As String)
+    Dim strCommand As String
+    Dim strDB As String
+    
+    Dim astrHistoryDBs() As String
+    Dim lngDBCtr As Long
+    Dim blnFirst As Boolean
+    Dim blnFinishedStorage As Boolean
+
+    ' Store all history dbs
+    blnFirst = True
+    blnFinishedStorage = False
+    lngDBCtr = 0
+    
+    Do While Not blnFinishedStorage
+        If blnFirst Then
+            strDB = Dir(mstrMDBPath & "\mdb_history??.mdb")
+            blnFirst = False
+        Else
+            strDB = Dir
+        End If
+
+        If LenB(Trim$(strDB)) > 0 Then
+            ReDim Preserve astrHistoryDBs(1 To lngDBCtr + 1)
+                                
+            astrHistoryDBs(UBound(astrHistoryDBs)) = strDB
+                
+            lngDBCtr = lngDBCtr + 1
+        Else
+            blnFinishedStorage = True
+        End If
+    Loop
+    
+    For lngDBCtr = 1 To UBound(astrHistoryDBs)
+        strDB = astrHistoryDBs(lngDBCtr)
+        
+        ' -------------------- '
+        ' DB CONNECTION - OPEN
+        ' -------------------- '
+        Set mconTmpHistoryWithExecteDoneEvent = New ADODB.Connection
+        mconTmpHistoryWithExecteDoneEvent.ConnectionString = "Provider=Microsoft.Jet.OLEDB.4.0;Data Source=" & mstrMDBPath & "\" & strDB & ";Persist Security Info=False;Jet OLEDB:Database Password=" & G_Main_Password
+        mconTmpHistoryWithExecteDoneEvent.Open
+        
+            ' --------------- '
+            ' START of PART_A === "tblInbounds" & "_" & Format(m_lngUserID, "00")
+            ' --------------- '
+                ' DROP Any existing tblInbounds_mlngUserID in the Old History DB
+                DropTableADODAO mconTmpHistoryWithExecteDoneEvent, mstrMDBPath, strDB, "tblNonZeroInbounds" & "_" & Format(m_lngUserID, "00")
+                                        
+                mconTmpHistoryWithExecteDoneEvent.Close
+                mconTmpHistoryWithExecteDoneEvent.Open
+                
+                ' Recreate the tblInbounds_mlngUserID in the Old History DB
+                'If (UCase(strDB) <> UCase(strHistoryDestination)) Then
+                        strCommand = vbNullString
+                        strCommand = strCommand & "SELECT "
+                        strCommand = strCommand & "In_ID, "
+                        strCommand = strCommand & "Prod_Num, "
+                        strCommand = strCommand & "Stock_Card_Num, "
+                        strCommand = strCommand & "Prod_Desc, "
+                        strCommand = strCommand & "Origin_Ctry_Desc, "
+                        strCommand = strCommand & "Export_Ctry_Desc, "
+                        strCommand = strCommand & "In_Orig_Packages_Qty AS In_Orig_Packages_Qty, "
+                        strCommand = strCommand & "Format(In_Orig_Gross_Weight,'0.000') AS [In_Orig_Gross_Weight], "
+                        strCommand = strCommand & "Format(In_Orig_Net_Weight,'0.00') AS [In_Orig_Net_Weight], "
+                        strCommand = strCommand & "Format(In_Avl_Qty_Wgt,'0.00') AS [In_Avl_Qty_Wgt], "
+                        strCommand = strCommand & "In_Orig_Packages_Type as In_Orig_Packages_Type, "
+                        strCommand = strCommand & "Inbounds.Stock_ID as Stock_ID, "
+                        strCommand = strCommand & "Inbounds.In_Code as In_Code "
+                        strCommand = strCommand & "INTO "
+                        strCommand = strCommand & "tblNonZeroInbounds" & "_" & Format(m_lngUserID, "00") & " "
+                        strCommand = strCommand & "FROM "
+                        strCommand = strCommand & "InboundDocs "
+                        strCommand = strCommand & "INNER JOIN "
+                            strCommand = strCommand & "( "
+                            strCommand = strCommand & "Inbounds "
+                            strCommand = strCommand & "INNER JOIN "
+                            strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & " "
+                            strCommand = strCommand & "ON "
+                            strCommand = strCommand & "Inbounds.Stock_ID = tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Stock_ID "
+                            strCommand = strCommand & ") "
+                        strCommand = strCommand & "ON "
+                        strCommand = strCommand & "InboundDocs.InDoc_ID = Inbounds.InDoc_ID "
+                        
+                        strCommand = strCommand & "WHERE "
+                        strCommand = strCommand & "UCASE(RIGHT(IIF(ISNULL(Inbounds!In_Code), '', Inbounds!In_Code), 11)) NOT LIKE '<<CLOSURE>>' "
+                        strCommand = strCommand & "AND "
+                        strCommand = strCommand & "UCASE(RIGHT(IIF(ISNULL(Inbounds!In_Code), '', Inbounds!In_Code), 8)) NOT LIKE '<<TEST>>' "
+                        strCommand = strCommand & "AND "
+                        strCommand = strCommand & "Inbounds.In_Avl_Qty_Wgt <> 0  "
+                        strCommand = strCommand & "ORDER BY "
+                        strCommand = strCommand & "Clng(Stock_Card_Num), "
+                        strCommand = strCommand & "Prod_Num "
+        
+                    mblnExecuteDone = False
+                    On Error Resume Next
+                    mconTmpHistoryWithExecteDoneEvent.Execute strCommand
+                    On Error GoTo 0
+                    Do Until mblnExecuteDone = True
+                    Loop
+                    
+                    mconTmpHistoryWithExecteDoneEvent.Close
+                    mconTmpHistoryWithExecteDoneEvent.Open
+                
+                ' --------------- '
+                ' START of PART_B === Replace(strDB, ".mdb", vbNullString) & "_tblNonZeroInbounds" & "_" & Format(m_lngUserID, "00")
+                ' --------------- '
+                If IsTableExisting(mstrMDBPath, strDB, "tblNonZeroInbounds" & "_" & Format(m_lngUserID, "00")) Then
+                    ' DROP Any Linked_Table strDB_tblNonZeroInbounds_mlngUserID in the Old History DB
+                    DropTableADODAO DestinationHistoryDB, mstrMDBPath, strHistoryDestination, Replace(strDB, ".mdb", vbNullString) & "_tblNonZeroInbounds" & "_" & Format(m_lngUserID, "00")
+                    
+                    DestinationHistoryDB.Close
+                    DestinationHistoryDB.Open
+                    
+                    Do While Not IsTableExisting(mstrMDBPath, strHistoryDestination, Replace(strDB, ".mdb", vbNullString) & "_tblNonZeroInbounds" & "_" & Format(m_lngUserID, "00"))
+                            DestinationHistoryDB.Close
+                            DestinationHistoryDB.Open
+                            
+                        ' Create Linked-Table of Non-Zero Inbounds from Old History DB in Latest History DB
+                        AddLinkedTableEx Replace(strDB, ".mdb", vbNullString) & "_tblNonZeroInbounds" & "_" & Format(m_lngUserID, "00"), mstrMDBPath & "\" & strHistoryDestination, G_Main_Password, "tblNonZeroInbounds" & "_" & Format(m_lngUserID, "00"), mstrMDBPath & "\" & strDB, G_Main_Password
+                    
+                    
+                        ' --------------- '
+                        ' START of PART_C === "AllNonZeroInbounds" & "_" & Format(m_lngUserID, "00")
+                        ' --------------- '
+                            DestinationHistoryDB.Close
+                            DestinationHistoryDB.Open
+                    Loop
+                        
+                        'If IsTableExisting(mstrMDBPath, strHistoryDestination, Replace(strDB, ".mdb", vbNullString) & "_tblNonZeroInbounds" & "_" & Format(m_lngUserID, "00")) Then
+                            ' Transfer Non-Zero Inbounds from Linked-Table into AllNonZeroInbounds_mlngUserID in Latest History DB
+                                strCommand = vbNullString
+                                If IsTableExisting(mstrMDBPath, strHistoryDestination, "AllNonZeroInbounds" & "_" & Format(m_lngUserID, "00")) Then
+                                    strCommand = strCommand & "INSERT INTO "
+                                    strCommand = strCommand & "AllNonZeroInbounds" & "_" & Format(m_lngUserID, "00") & " "
+                                End If
+                                strCommand = strCommand & "SELECT "
+                                strCommand = strCommand & "* "
+                                If Not IsTableExisting(mstrMDBPath, strHistoryDestination, "AllNonZeroInbounds" & "_" & Format(m_lngUserID, "00")) Then
+                                    strCommand = strCommand & "INTO "
+                                    strCommand = strCommand & "AllNonZeroInbounds" & "_" & Format(m_lngUserID, "00") & " "
+                                End If
+                                strCommand = strCommand & "FROM "
+                                strCommand = strCommand & Replace(strDB, ".mdb", vbNullString) & "_tblNonZeroInbounds" & "_" & Format(m_lngUserID, "00") & " "
+                            If Not IsTableExisting(mstrMDBPath, strHistoryDestination, "AllNonZeroInbounds" & "_" & Format(m_lngUserID, "00")) Then
+                                CreateTableADODAO DestinationHistoryDB, mstrMDBPath, strHistoryDestination, "AllNonZeroInbounds" & "_" & Format(m_lngUserID, "00"), strCommand
+                            Else
+                                
+                                
+                                mblnExecuteDone = False
+                                On Error Resume Next
+                                DestinationHistoryDB.Execute strCommand
+                                On Error GoTo 0
+                                Do Until mblnExecuteDone = True
+                                Loop
+                            End If
+                            
+                            DestinationHistoryDB.Close
+                            DestinationHistoryDB.Open
+                        'End If
+                    ' ------------- '
+                    ' END of PART_C === "AllNonZeroInbounds" & "_" & Format(m_lngUserID, "00")
+                    ' ------------- '
+                
+                End If
+                ' ------------- '
+                ' END of PART_B === Replace(strDB, ".mdb", vbNullString) & "_tblNonZeroInbounds" & "_" & Format(m_lngUserID, "00")
+                ' ------------- '
+                    ' Drop the Linked Table of Non-Zero Inbounds from Latest History DB
+                    'DropTableADODAO DestinationHistoryDB, mstrMDBPath, strDB, Replace(strDB, ".mdb", vbNullString) & "_tblNonZeroInbounds" & "_" & Format(m_lngUserID, "00")
+                
+            ' ------------- '
+            ' END of PART_A === "tblNonZeroInbounds" & "_" & Format(m_lngUserID, "00")
+            ' ------------- '
+                ' Drop tblNonZeroInbounds_mlngUserID from the Old History DB
+                'DropTableADODAO mconTmpHistoryWithExecteDoneEvent, mstrMDBPath, strDB, "tblNonZeroInbounds" & "_" & Format(m_lngUserID, "00")
+                
+            'End If
+        
+        ' --------------------- '
+        ' DB CONNECTION - CLOSE
+        ' --------------------- '
+            mconTmpHistoryWithExecteDoneEvent.Close
+            Set mconTmpHistoryWithExecteDoneEvent = Nothing
+    Next lngDBCtr
+End Sub
+
+Private Sub InsertSummaryNonZeroInboundsFromOldHIstoryDBsToLatestHistoryDB(ByRef DestinationHistoryDB As ADODB.Connection, _
+                                                                        ByVal strHistoryDestination As String)
+    Dim strCommand As String
+    Dim strDB As String
+    
+    Dim astrHistoryDBs() As String
+    Dim lngDBCtr As Long
+    Dim blnFirst As Boolean
+    Dim blnFinishedStorage As Boolean
+
+    ' Store all history dbs
+    blnFirst = True
+    blnFinishedStorage = False
+    lngDBCtr = 0
+    
+    Do While Not blnFinishedStorage
+        If blnFirst Then
+            strDB = Dir(mstrMDBPath & "\mdb_history??.mdb")
+            blnFirst = False
+        Else
+            strDB = Dir
+        End If
+
+        If LenB(Trim$(strDB)) > 0 Then
+            ReDim Preserve astrHistoryDBs(1 To lngDBCtr + 1)
+                                
+            astrHistoryDBs(UBound(astrHistoryDBs)) = strDB
+                
+            lngDBCtr = lngDBCtr + 1
+        Else
+            blnFinishedStorage = True
+        End If
+    Loop
+    
+    For lngDBCtr = 1 To UBound(astrHistoryDBs)
+        strDB = astrHistoryDBs(lngDBCtr)
+                                
+        ' -------------------- '
+        ' DB CONNECTION - OPEN
+        ' -------------------- '
+        Set mconTmpHistoryWithExecteDoneEvent = New ADODB.Connection
+        mconTmpHistoryWithExecteDoneEvent.ConnectionString = "Provider=Microsoft.Jet.OLEDB.4.0;Data Source=" & mstrMDBPath & "\" & strDB & ";Persist Security Info=False;Jet OLEDB:Database Password=" & G_Main_Password
+        mconTmpHistoryWithExecteDoneEvent.Open
+        
+            ' --------------- '
+            ' START of PART_A === "tblInbounds" & "_" & Format(m_lngUserID, "00")
+            ' --------------- '
+                ' DROP Any existing tblInbounds_mlngUserID in the Old History DB
+                DropTableADODAO mconTmpHistoryWithExecteDoneEvent, mstrMDBPath, strDB, "tblInbounds" & "_" & Format(m_lngUserID, "00")
+                                        
+                mconTmpHistoryWithExecteDoneEvent.Close
+                mconTmpHistoryWithExecteDoneEvent.Open
+                
+                ' Recreate the tblInbounds_mlngUserID in the Old History DB
+                'If (UCase(strDB) <> UCase(strHistoryDestination)) Then
+                        strCommand = vbNullString
+                        strCommand = strCommand & "SELECT "
+                        strCommand = strCommand & "Prod_Num, "
+                        strCommand = strCommand & "Stock_Card_Num, "
+                        strCommand = strCommand & "Prod_Desc, "
+                        strCommand = strCommand & "Origin_Ctry_Desc, "
+                        strCommand = strCommand & "Export_Ctry_Desc, "
+                        strCommand = strCommand & "SUM(In_Orig_Packages_Qty) AS Quantity, "
+                        strCommand = strCommand & "Format(SUM(In_Orig_Gross_Weight),'0.000') AS [Gross Weight], "
+                        strCommand = strCommand & "Format(SUM(In_Orig_Net_Weight),'0.00') AS [Net Weight], "
+                        strCommand = strCommand & "Format(SUM(In_Avl_Qty_Wgt),'0.00') AS [Avl Weight], "
+                        strCommand = strCommand & "In_Orig_Packages_Type as Packages_Type, "
+                        strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Prod_Handling as Prod_Handling "
+                        strCommand = strCommand & "INTO "
+                        strCommand = strCommand & "tblInbounds" & "_" & Format(m_lngUserID, "00") & " "
+                        strCommand = strCommand & "FROM "
+                        strCommand = strCommand & "InboundDocs "
+                        strCommand = strCommand & "INNER JOIN "
+                            strCommand = strCommand & "( "
+                                strCommand = strCommand & "Inbounds "
+                                strCommand = strCommand & "INNER JOIN "
+                                strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & " "
+                                strCommand = strCommand & "ON "
+                                strCommand = strCommand & "Inbounds.Stock_ID = tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Stock_ID "
+                            strCommand = strCommand & ") "
+                        strCommand = strCommand & "ON "
+                        strCommand = strCommand & "InboundDocs.InDoc_ID = Inbounds.InDoc_ID "
+                        strCommand = strCommand & "WHERE "
+                        strCommand = strCommand & "UCASE(RIGHT(IIF(ISNULL(Inbounds!In_Code), '', Inbounds!In_Code), 11)) NOT LIKE '<<CLOSURE>>' "
+                        strCommand = strCommand & "AND "
+                        strCommand = strCommand & "UCASE(RIGHT(IIF(ISNULL(Inbounds!In_Code),'',Inbounds!In_Code), 8)) NOT LIKE '<<TEST>>' "
+                        strCommand = strCommand & "AND "
+                        strCommand = strCommand & "Inbounds.In_Avl_Qty_Wgt <> 0  "
+                        strCommand = strCommand & "GROUP BY "
+                        strCommand = strCommand & "Prod_Num, "
+                        strCommand = strCommand & "Prod_Desc, "
+                        strCommand = strCommand & "Stock_Card_Num, "
+                        strCommand = strCommand & "Origin_Ctry_Desc, "
+                        strCommand = strCommand & "Export_Ctry_Desc, "
+                        strCommand = strCommand & "In_Orig_Packages_Type, "
+                        strCommand = strCommand & "Prod_Handling "
+                    
+                    mblnExecuteDone = False
+                    On Error Resume Next
+                    mconTmpHistoryWithExecteDoneEvent.Execute strCommand
+                    On Error GoTo 0
+                    Do Until mblnExecuteDone = True
+                    Loop
+                    
+                    mconTmpHistoryWithExecteDoneEvent.Close
+                    mconTmpHistoryWithExecteDoneEvent.Open
+                        
+                        If (m_blnShowZeroStocks = True) Then
+                                strCommand = vbNullString
+                                If IsTableExisting(mstrMDBPath, strDB, "tblInbounds" & "_" & Format(m_lngUserID, "00")) Then
+                                    strCommand = strCommand & "INSERT INTO "
+                                    strCommand = strCommand & "tblInbounds" & "_" & Format(m_lngUserID, "00") & " "
+                                End If
+                                strCommand = strCommand & "SELECT "
+                                strCommand = strCommand & "Prod_Num, "
+                                strCommand = strCommand & "Stock_Card_Num, "
+                                strCommand = strCommand & "Prod_Desc, "
+                                strCommand = strCommand & "Origin_Ctry_Desc, "
+                                strCommand = strCommand & "Export_Ctry_Desc, "
+                                strCommand = strCommand & "SUM(0) AS Quantity, "
+                                strCommand = strCommand & "Format(SUM(0),'0.000') AS [Gross Weight], "
+                                strCommand = strCommand & "Format(SUM(0),'0.00') AS [Net Weight], "
+                                strCommand = strCommand & "Format(SUM(In_Avl_Qty_Wgt),'0.00') AS [Avl Weight], "
+                                strCommand = strCommand & "In_Orig_Packages_Type as Packages_Type, "
+                                strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Prod_Handling as Prod_Handling "
+                                If Not IsTableExisting(mstrMDBPath, strDB, "tblInbounds" & "_" & Format(m_lngUserID, "00")) Then
+                                    strCommand = strCommand & "INTO "
+                                    strCommand = strCommand & "tblInbounds" & "_" & Format(m_lngUserID, "00") & " "
+                                End If
+                                strCommand = strCommand & "FROM "
+                                strCommand = strCommand & "InboundDocs "
+                                strCommand = strCommand & "INNER JOIN "
+                                    strCommand = strCommand & "( "
+                                        strCommand = strCommand & "Inbounds "
+                                        strCommand = strCommand & "INNER JOIN "
+                                        strCommand = strCommand & "tblProdStock" & "_" & Format(m_lngUserID, "00") & " "
+                                        strCommand = strCommand & "ON "
+                                        strCommand = strCommand & "Inbounds.Stock_ID = tblProdStock" & "_" & Format(m_lngUserID, "00") & ".Stock_ID "
+                                    strCommand = strCommand & ") "
+                                strCommand = strCommand & "ON "
+                                strCommand = strCommand & "InboundDocs.InDoc_ID = Inbounds.InDoc_ID "
+                                strCommand = strCommand & "WHERE "
+                                strCommand = strCommand & "UCASE(RIGHT(IIF(ISNULL(Inbounds!In_Code), '', Inbounds!In_Code), 11)) NOT LIKE '<<CLOSURE>>' "
+                                strCommand = strCommand & "AND "
+                                strCommand = strCommand & "UCASE(RIGHT(IIF(ISNULL(Inbounds!In_Code),'',Inbounds!In_Code), 8)) NOT LIKE '<<TEST>>' "
+                                strCommand = strCommand & "AND "
+                                strCommand = strCommand & "Inbounds.In_Avl_Qty_Wgt = 0  "
+                                strCommand = strCommand & "GROUP BY "
+                                strCommand = strCommand & "Prod_Num, "
+                                strCommand = strCommand & "Prod_Desc, "
+                                strCommand = strCommand & "Stock_Card_Num, "
+                                strCommand = strCommand & "Origin_Ctry_Desc, "
+                                strCommand = strCommand & "Export_Ctry_Desc, "
+                                strCommand = strCommand & "In_Orig_Packages_Type, "
+                                strCommand = strCommand & "Prod_Handling "
+                            
+                            
+                            mblnExecuteDone = False
+                            On Error Resume Next
+                            mconTmpHistoryWithExecteDoneEvent.Execute strCommand
+                            On Error GoTo 0
+                            Do Until mblnExecuteDone = True
+                            Loop
+                            
+                            mconTmpHistoryWithExecteDoneEvent.Close
+                            mconTmpHistoryWithExecteDoneEvent.Open
+                        End If
+                        
+                        'strCommand = strCommand & "ORDER BY "
+                        'strCommand = strCommand & "Clng(Stock_Card_Num), "
+                        'strCommand = strCommand & "Prod_Num "
+                    
+                ' --------------- '
+                ' START of PART_B === Replace(strDB, ".mdb", vbNullString) & "_Inbounds" & "_" & Format(m_lngUserID, "00")
+                ' --------------- '
+                    ' DROP Any Linked_Table strDB_Inbounds_mlngUserID in the Old History DB
+                    DropTableADODAO DestinationHistoryDB, mstrMDBPath, strHistoryDestination, Replace(strDB, ".mdb", vbNullString) & "_Inbounds" & "_" & Format(m_lngUserID, "00")
+                
+                    DestinationHistoryDB.Close
+                    DestinationHistoryDB.Open
+                    
+                    ' Create Linked-Table of Non-Zero Inbounds from Old History DB in Latest History DB
+                    AddLinkedTableEx Replace(strDB, ".mdb", vbNullString) & "_Inbounds" & "_" & Format(m_lngUserID, "00"), mstrMDBPath & "\" & strHistoryDestination, G_Main_Password, "tblInbounds" & "_" & Format(m_lngUserID, "00"), mstrMDBPath & "\" & strDB, G_Main_Password
+                
+                
+                    ' --------------- '
+                    ' START of PART_C === "AllInboundsOutbounds" & "_" & Format(m_lngUserID, "00")
+                    ' --------------- '
+                        DestinationHistoryDB.Close
+                        DestinationHistoryDB.Open
+                        
+                        If IsTableExisting(mstrMDBPath, strHistoryDestination, Replace(strDB, ".mdb", vbNullString) & "_Inbounds" & "_" & Format(m_lngUserID, "00")) Then
+                            ' Transfer Non-Zero Inbounds from Linked-Table into AllInboundsOutbounds_mlngUserID in Latest History DB
+                                strCommand = vbNullString
+                                If IsTableExisting(mstrMDBPath, strHistoryDestination, "AllInboundsOutbounds" & "_" & Format(m_lngUserID, "00")) Then
+                                    strCommand = strCommand & "INSERT INTO "
+                                    strCommand = strCommand & "AllInboundsOutbounds" & "_" & Format(m_lngUserID, "00") & " "
+                                End If
+                                strCommand = strCommand & "SELECT "
+                                strCommand = strCommand & "* "
+                                If Not IsTableExisting(mstrMDBPath, strHistoryDestination, "AllInboundsOutbounds" & "_" & Format(m_lngUserID, "00")) Then
+                                    strCommand = strCommand & "INTO "
+                                    strCommand = strCommand & "AllInboundsOutbounds" & "_" & Format(m_lngUserID, "00") & " "
+                                End If
+                                strCommand = strCommand & "FROM "
+                                strCommand = strCommand & Replace(strDB, ".mdb", vbNullString) & "_Inbounds" & "_" & Format(m_lngUserID, "00") & " "
+                            If Not IsTableExisting(mstrMDBPath, strHistoryDestination, "AllInboundsOutbounds" & "_" & Format(m_lngUserID, "00")) Then
+                                CreateTableADODAO DestinationHistoryDB, mstrMDBPath, strHistoryDestination, "AllInboundsOutbounds" & "_" & Format(m_lngUserID, "00"), strCommand
+                            Else
+                                
+                                
+                                mblnExecuteDone = False
+                                On Error Resume Next
+                                DestinationHistoryDB.Execute strCommand
+                                On Error GoTo 0
+                                Do Until mblnExecuteDone = True
+                                Loop
+                            End If
+                            
+                            DestinationHistoryDB.Close
+                            DestinationHistoryDB.Open
+                        End If
+                    ' ------------- '
+                    ' END of PART_C === "AllInboundsOutbounds" & "_" & Format(m_lngUserID, "00")
+                    ' ------------- '
+                
+                ' ------------- '
+                ' END of PART_B === Replace(strDB, ".mdb", vbNullString) & "_Inbounds" & "_" & Format(m_lngUserID, "00")
+                ' ------------- '
+                    ' Drop the Linked Table of Non-Zero Inbounds from Latest History DB
+                    'DropTableADODAO DestinationHistoryDB, mstrMDBPath, strDB, Replace(strDB, ".mdb", vbNullString) & "_Inbounds" & "_" & Format(m_lngUserID, "00")
+                
+            ' ------------- '
+            ' END of PART_A === "tblInbounds" & "_" & Format(m_lngUserID, "00")
+            ' ------------- '
+                ' Drop tblInbounds_mlngUserID from the Old History DB
+                'DropTableADODAO mconTmpHistoryWithExecteDoneEvent, mstrMDBPath, strDB, "tblInbounds" & "_" & Format(m_lngUserID, "00")
+                
+            'End If
+        
+        ' --------------------- '
+        ' DB CONNECTION - CLOSE
+        ' --------------------- '
+            mconTmpHistoryWithExecteDoneEvent.Close
+            Set mconTmpHistoryWithExecteDoneEvent = Nothing
+    Next lngDBCtr
+End Sub
+
+
+
+
+
+
+

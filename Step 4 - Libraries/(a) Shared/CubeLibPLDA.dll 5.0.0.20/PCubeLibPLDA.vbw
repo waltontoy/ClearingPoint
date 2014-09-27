@@ -1,0 +1,15 @@
+MProcedures = 272, 79, 1206, 849, C
+CReleaseMessage = 148, 127, 1209, 828, C
+MGlobals = 308, 198, 1364, 855, C
+CEDIMessage = 109, 148, 1412, 843, C
+CAmendment = 172, 143, 1118, 785, C
+CCancellation = 44, 58, 1193, 777, C
+CDetails = 110, 145, 891, 638, C
+CEDetail = 92, 80, 1202, 798, C
+CEHeader = 88, 42, 1100, 833, C
+CIDetail = 16, 84, 1178, 838, C
+CIHeader = 92, 84, 1241, 868, C
+CISummary = 55, 123, 1380, 778, C
+CReleaseRequest = 86, 139, 1263, 853, C
+CXMLMessage = 157, 110, 1271, 783, C
+MXMLProcedures = -162, 262, 1210, 935, C

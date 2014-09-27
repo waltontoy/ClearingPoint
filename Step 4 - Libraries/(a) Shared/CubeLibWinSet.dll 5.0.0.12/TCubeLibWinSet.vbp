@@ -1,0 +1,37 @@
+Type=Exe
+Reference=*\G{00020430-0000-0000-C000-000000000046}#2.0#0#..\..\..\..\..\..\..\..\..\WINDOWS\system32\stdole2.tlb#OLE Automation
+Reference=*\A..\PCubeLibWinSet.vbp
+Reference=*\G{00000205-0000-0010-8000-00AA006D2EA4}#2.5#0#..\..\..\..\..\..\..\..\..\Program Files\Common Files\system\ado\msado25.tlb#Microsoft ActiveX Data Objects 2.5 Library
+Reference=*\G{83348881-E694-42AF-9C3C-67DF53A81F31}#1.0#0#..\..\..\..\..\..\..\..\..\WINDOWS\system32\CubeLibDBReg.dll#CubeLibDBReg
+Reference=*\G{3B6C631B-A0F2-4D66-AE9D-FB5C910028F1}#5.0#0#..\..\..\(00) CubeLibDataSource.dll (Shared)\(0603)\bin\Debug\CubeLibDataSource.tlb#CubeLibDataSource
+Form=FMain.frm
+Module=MGlobals; MGlobals.bas
+Startup="FMain"
+Command32=""
+Name="TCubeLibWinSet"
+HelpContextID="0"
+CompatibleMode="0"
+MajorVer=1
+MinorVer=0
+RevisionVer=0
+AutoIncrementVer=0
+ServerSupportFiles=0
+VersionCompanyName="Cubepoint, Inc."
+CompilationType=0
+OptimizationType=0
+FavorPentiumPro(tm)=0
+CodeViewDebugInfo=0
+NoAliasing=0
+BoundsCheck=0
+OverflowCheck=0
+FlPointCheck=0
+FDIVCheck=0
+UnroundedFP=0
+StartMode=0
+Unattended=0
+Retained=0
+ThreadPerObject=0
+MaxNumberOfThreads=1
+
+[MS Transaction Server]
+AutoRefresh=1
