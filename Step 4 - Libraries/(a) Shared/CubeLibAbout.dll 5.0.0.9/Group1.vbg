@@ -1,0 +1,4 @@
+VBGROUP 5.0
+Project=..\PCubeLibAbout.vbp
+StartupProject=PUnitCubeLibAbout.vbp
+Project=..\..\..\(08) CubeLibDBReg.dll (Shared)\CubeLibDBReg.dll 5.0.0.14\CubeLibDBReg 5.0.0.14\PCubeLibDBReg.vbp

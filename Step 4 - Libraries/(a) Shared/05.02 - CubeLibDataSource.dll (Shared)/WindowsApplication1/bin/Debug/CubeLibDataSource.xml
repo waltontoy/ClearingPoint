@@ -1,0 +1,159 @@
+﻿<?xml version="1.0"?>
+<doc>
+<assembly>
+<name>
+CubeLibDataSource
+</name>
+</assembly>
+<members>
+<member name="P:CubeLibDataSource.My.Resources.Resources.ResourceManager">
+	<summary>
+  Returns the cached ResourceManager instance used by this class.
+</summary>
+</member><member name="P:CubeLibDataSource.My.Resources.Resources.Culture">
+	<summary>
+  Overrides the current thread's CurrentUICulture property for all
+  resource lookups using this strongly typed resource class.
+</summary>
+</member><member name="P:CubeLibDataSource.My.Resources.Resources.persistence">
+	<summary>
+  Looks up a localized string similar to # database can be any of the following:
+#		ACCESS - Microsoft Access
+#		SQLSERVER - SQL SErver
+#		ORACLE - Oracle Server - Not yet supported
+database=ACCESS
+
+# servername consist of machine name + server instance name
+#servername=EDWIN-PC/SQLFULL
+
+# default admin username for SQL server is "sa"
+username=clearingpoint
+
+# password should not be here or this file should be encrypted
+password=wack2
+
+# set to TRUE if you want to print DEBUG Trace logs
+debug=TRUE
+
+# database path override when registry key is not [rest of string was truncated]";.
+</summary>
+</member><member name="T:CubeLibDataSource.My.Resources.Resources">
+	<summary>
+  A strongly-typed resource class, for looking up localized strings, etc.
+</summary>
+</member><member name="M:CubeLibDataSource.CDatasource.ExecuteNonQueryOtherDB(System.String,System.String)">
+	<summary>
+ DELETE, UPDATE and INSERT via SQL Script
+ </summary>
+</member><member name="M:CubeLibDataSource.CDatasource.ExecuteNonQuery(System.String,CubeLibDataSource.CDatasource.DBInstanceType,System.String)">
+	<summary>
+ DELETE, UPDATE and INSERT via SQL Script
+ </summary>
+</member><member name="M:CubeLibDataSource.CDatasource.UpdateSadbel(ADODB.Recordset@,CubeLibDataSource.CDatasource.SadbelTableType)">
+	<summary>
+ Update a selected ADODB.Recordset.Row for mdb_sadbel
+ </summary>
+</member><member name="M:CubeLibDataSource.CDatasource.UpdateEdifact(ADODB.Recordset@,CubeLibDataSource.CDatasource.EdifactTableType)">
+	<summary>
+ Update a selected ADODB.Recordset.Row for edifact
+ </summary>
+</member><member name="M:CubeLibDataSource.CDatasource.UpdateData(ADODB.Recordset@,CubeLibDataSource.CDatasource.DataTableType)">
+	<summary>
+ Update a selected ADODB.Recordset.Row for mdb_data
+ </summary>
+</member><member name="M:CubeLibDataSource.CDatasource.UpdateEdifactHistory(ADODB.Recordset@,CubeLibDataSource.CDatasource.EdifactTableType,System.String)">
+	<summary>
+ Update a selected ADODB.Recordset.Row for mdb_EDIHistoryXX
+ </summary>
+</member><member name="M:CubeLibDataSource.CDatasource.UpdateSadbelHistory(ADODB.Recordset@,CubeLibDataSource.CDatasource.SadbelHistoryTableType,System.String)">
+	<summary>
+ Update a selected ADODB.Recordset.Row for mdb_historyXX
+ </summary>
+</member><member name="M:CubeLibDataSource.CDatasource.UpdateRepertory(ADODB.Recordset@,CubeLibDataSource.CDatasource.RepertoryTableType,System.String)">
+	<summary>
+ Update a selected ADODB.Recordset.Row for mdb_RepertoryXXXX
+ </summary>
+</member><member name="M:CubeLibDataSource.CDatasource.UpdateOtherDB(ADODB.Recordset@,System.String,System.String)">
+	<summary>
+ Update a selected ADODB.Recordset.Row for TemplateCP
+ </summary>
+</member><member name="M:CubeLibDataSource.CDatasource.UpdateTemplateCP(ADODB.Recordset@,CubeLibDataSource.CDatasource.TemplateCPTableType)">
+	<summary>
+ Update a selected ADODB.Recordset.Row for TemplateCP
+ </summary>
+</member><member name="M:CubeLibDataSource.CDatasource.UpdateScheduler(ADODB.Recordset@,CubeLibDataSource.CDatasource.SchedulerTableType)">
+	<summary>
+ Update a selected ADODB.Recordset.Row for Scheduler
+ </summary>
+</member><member name="M:CubeLibDataSource.CDatasource.UpdateTaric(ADODB.Recordset@,CubeLibDataSource.CDatasource.TaricTableType)">
+	<summary>
+ Update a selected ADODB.Recordset.Row for Taric
+ </summary>
+</member><member name="M:CubeLibDataSource.CDatasource.InsertSadbel(ADODB.Recordset@,CubeLibDataSource.CDatasource.SadbelTableType)">
+	<summary>
+ Insert a selected ADODB.Recordset.Row for mdb_sadbel
+ </summary>
+</member><member name="M:CubeLibDataSource.CDatasource.InsertEdifact(ADODB.Recordset@,CubeLibDataSource.CDatasource.EdifactTableType)">
+	<summary>
+ Insert a selected ADODB.Recordset.Row for edifact
+ </summary>
+</member><member name="M:CubeLibDataSource.CDatasource.InsertData(ADODB.Recordset@,CubeLibDataSource.CDatasource.DataTableType)">
+	<summary>
+ Insert a selected ADODB.Recordset.Row for mdb_data
+ </summary>
+</member><member name="M:CubeLibDataSource.CDatasource.InsertEdifactHistory(ADODB.Recordset@,CubeLibDataSource.CDatasource.EdifactTableType,System.String)">
+	<summary>
+ Insert a selected ADODB.Recordset.Row for EdiHistoryXX
+ </summary>
+</member><member name="M:CubeLibDataSource.CDatasource.InsertSadbelHistory(ADODB.Recordset@,CubeLibDataSource.CDatasource.SadbelHistoryTableType,System.String)">
+	<summary>
+ Insert a selected ADODB.Recordset.Row for mdb_historyXX
+ </summary>
+</member><member name="M:CubeLibDataSource.CDatasource.InsertRepertory(ADODB.Recordset@,CubeLibDataSource.CDatasource.RepertoryTableType,System.String)">
+	<summary>
+ Insert a selected ADODB.Recordset.Row for mdb_repertoryXXXX
+ </summary>
+</member><member name="M:CubeLibDataSource.CDatasource.InsertOtherDB(ADODB.Recordset@,System.String,System.String)">
+	<summary>
+ Insert a selected ADODB.Recordset.Row for TemplateCP
+ </summary>
+</member><member name="M:CubeLibDataSource.CDatasource.InsertTemplateCP(ADODB.Recordset@,CubeLibDataSource.CDatasource.TemplateCPTableType)">
+	<summary>
+ Insert a selected ADODB.Recordset.Row for TemplateCP
+ </summary>
+</member><member name="M:CubeLibDataSource.CDatasource.InsertScheduler(ADODB.Recordset@,CubeLibDataSource.CDatasource.SchedulerTableType)">
+	<summary>
+ Insert a selected ADODB.Recordset.Row for Scheduler
+ </summary>
+</member><member name="M:CubeLibDataSource.CDatasource.InsertTaric(ADODB.Recordset@,CubeLibDataSource.CDatasource.TaricTableType)">
+	<summary>
+ Insert a selected ADODB.Recordset.Row for Taric
+ </summary>
+</member><member name="M:CubeLibDataSource.CDatasource.ExecuteQuery(System.String,CubeLibDataSource.CDatasource.DBInstanceType,System.Boolean,System.String,System.String)">
+	<summary>
+ SELECT query interface to VB.NET
+ </summary>
+	<returns>an ADODB.Recordset containing the queried record</returns>
+</member><member name="M:CubeLibDataSource.ClearingPointException.#ctor">
+	<summary>
+ Initializes a new instance of the <see cref="T:CubeLibDataSource.ClearingPointException"/> class.
+ </summary>
+</member><member name="M:CubeLibDataSource.ClearingPointException.#ctor(System.String)">
+	<summary>
+ Initializes a new instance of the <see cref="T:CubeLibDataSource.ClearingPointException"/> class
+ with the specified error message.
+ </summary>
+	<param name="message">The message that describes the error.</param>
+</member><member name="M:CubeLibDataSource.ClearingPointException.#ctor(System.String,System.Exception)">
+	<summary>
+ Initializes a new instance of the <see cref="T:CubeLibDataSource.ClearingPointException"/> class
+ with the specified error message and a reference to the inner
+ exception that is the cause of this exception.
+ </summary>
+	<param name="message">The message that describes the error.</param>
+	<param name="innerException">The exception that is the cause of the
+ current exception, or a null reference if no inner exception is
+ specified</param>
+</member>
+</members>
+</doc>

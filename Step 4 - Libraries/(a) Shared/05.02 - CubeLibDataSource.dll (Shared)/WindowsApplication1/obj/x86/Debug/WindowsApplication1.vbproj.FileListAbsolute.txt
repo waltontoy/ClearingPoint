@@ -1,0 +1,32 @@
+C:\Cubepoint\ClearingPoint\Releases\5.0\5.00.00\Step 4 - Libraries\(00) CubeLibDataSource.dll (Shared)\WindowsApplication1\bin\Debug\WindowsApplication1.exe
+C:\Cubepoint\ClearingPoint\Releases\5.0\5.00.00\Step 4 - Libraries\(00) CubeLibDataSource.dll (Shared)\WindowsApplication1\bin\Debug\WindowsApplication1.pdb
+C:\Cubepoint\ClearingPoint\Releases\5.0\5.00.00\Step 4 - Libraries\(00) CubeLibDataSource.dll (Shared)\WindowsApplication1\bin\Debug\WindowsApplication1.xml
+C:\Cubepoint\ClearingPoint\Releases\5.0\5.00.00\Step 4 - Libraries\(00) CubeLibDataSource.dll (Shared)\WindowsApplication1\bin\Debug\CubeLibDataSource.dll
+C:\Cubepoint\ClearingPoint\Releases\5.0\5.00.00\Step 4 - Libraries\(00) CubeLibDataSource.dll (Shared)\WindowsApplication1\bin\Debug\CubeLibDataSource.pdb
+C:\Cubepoint\ClearingPoint\Releases\5.0\5.00.00\Step 4 - Libraries\(00) CubeLibDataSource.dll (Shared)\WindowsApplication1\bin\Debug\CubeLibDataSource.xml
+C:\Cubepoint\ClearingPoint\Releases\5.0\5.00.00\Step 4 - Libraries\(00) CubeLibDataSource.dll (Shared)\WindowsApplication1\bin\Debug\ADODB.dll
+C:\Cubepoint\ClearingPoint\Releases\5.0\5.00.00\Step 4 - Libraries\(00) CubeLibDataSource.dll (Shared)\WindowsApplication1\obj\x86\Debug\ResolveAssemblyReference.cache
+C:\Cubepoint\ClearingPoint\Releases\5.0\5.00.00\Step 4 - Libraries\(00) CubeLibDataSource.dll (Shared)\WindowsApplication1\obj\x86\Debug\WindowsApplication1.vbproj.ResolveComReference.cache
+C:\Cubepoint\ClearingPoint\Releases\5.0\5.00.00\Step 4 - Libraries\(00) CubeLibDataSource.dll (Shared)\WindowsApplication1\obj\x86\Debug\WindowsApplication1.Form1.resources
+C:\Cubepoint\ClearingPoint\Releases\5.0\5.00.00\Step 4 - Libraries\(00) CubeLibDataSource.dll (Shared)\WindowsApplication1\obj\x86\Debug\WindowsApplication1.Resources.resources
+C:\Cubepoint\ClearingPoint\Releases\5.0\5.00.00\Step 4 - Libraries\(00) CubeLibDataSource.dll (Shared)\WindowsApplication1\obj\x86\Debug\GenerateResource.read.1.tlog
+C:\Cubepoint\ClearingPoint\Releases\5.0\5.00.00\Step 4 - Libraries\(00) CubeLibDataSource.dll (Shared)\WindowsApplication1\obj\x86\Debug\GenerateResource.write.1.tlog
+C:\Cubepoint\ClearingPoint\Releases\5.0\5.00.00\Step 4 - Libraries\(00) CubeLibDataSource.dll (Shared)\WindowsApplication1\obj\x86\Debug\WindowsApplication1.exe
+C:\Cubepoint\ClearingPoint\Releases\5.0\5.00.00\Step 4 - Libraries\(00) CubeLibDataSource.dll (Shared)\WindowsApplication1\obj\x86\Debug\WindowsApplication1.xml
+C:\Cubepoint\ClearingPoint\Releases\5.0\5.00.00\Step 4 - Libraries\(00) CubeLibDataSource.dll (Shared)\WindowsApplication1\obj\x86\Debug\WindowsApplication1.pdb
+C:\Cubepoint\ClearingPoint\Releases\5.0\5.00.00\Step 4 - Libraries\05.02 - CubeLibDataSource.dll (Shared)\WindowsApplication1\bin\Debug\WindowsApplication1.exe
+C:\Cubepoint\ClearingPoint\Releases\5.0\5.00.00\Step 4 - Libraries\05.02 - CubeLibDataSource.dll (Shared)\WindowsApplication1\bin\Debug\WindowsApplication1.pdb
+C:\Cubepoint\ClearingPoint\Releases\5.0\5.00.00\Step 4 - Libraries\05.02 - CubeLibDataSource.dll (Shared)\WindowsApplication1\bin\Debug\WindowsApplication1.xml
+C:\Cubepoint\ClearingPoint\Releases\5.0\5.00.00\Step 4 - Libraries\05.02 - CubeLibDataSource.dll (Shared)\WindowsApplication1\bin\Debug\CubeLibDataSource.dll
+C:\Cubepoint\ClearingPoint\Releases\5.0\5.00.00\Step 4 - Libraries\05.02 - CubeLibDataSource.dll (Shared)\WindowsApplication1\bin\Debug\CubeLibDataSource.pdb
+C:\Cubepoint\ClearingPoint\Releases\5.0\5.00.00\Step 4 - Libraries\05.02 - CubeLibDataSource.dll (Shared)\WindowsApplication1\bin\Debug\CubeLibDataSource.xml
+C:\Cubepoint\ClearingPoint\Releases\5.0\5.00.00\Step 4 - Libraries\05.02 - CubeLibDataSource.dll (Shared)\WindowsApplication1\bin\Debug\ADODB.dll
+C:\Cubepoint\ClearingPoint\Releases\5.0\5.00.00\Step 4 - Libraries\05.02 - CubeLibDataSource.dll (Shared)\WindowsApplication1\obj\x86\Debug\ResolveAssemblyReference.cache
+C:\Cubepoint\ClearingPoint\Releases\5.0\5.00.00\Step 4 - Libraries\05.02 - CubeLibDataSource.dll (Shared)\WindowsApplication1\obj\x86\Debug\WindowsApplication1.vbproj.ResolveComReference.cache
+C:\Cubepoint\ClearingPoint\Releases\5.0\5.00.00\Step 4 - Libraries\05.02 - CubeLibDataSource.dll (Shared)\WindowsApplication1\obj\x86\Debug\WindowsApplication1.Form1.resources
+C:\Cubepoint\ClearingPoint\Releases\5.0\5.00.00\Step 4 - Libraries\05.02 - CubeLibDataSource.dll (Shared)\WindowsApplication1\obj\x86\Debug\WindowsApplication1.Resources.resources
+C:\Cubepoint\ClearingPoint\Releases\5.0\5.00.00\Step 4 - Libraries\05.02 - CubeLibDataSource.dll (Shared)\WindowsApplication1\obj\x86\Debug\GenerateResource.read.1.tlog
+C:\Cubepoint\ClearingPoint\Releases\5.0\5.00.00\Step 4 - Libraries\05.02 - CubeLibDataSource.dll (Shared)\WindowsApplication1\obj\x86\Debug\GenerateResource.write.1.tlog
+C:\Cubepoint\ClearingPoint\Releases\5.0\5.00.00\Step 4 - Libraries\05.02 - CubeLibDataSource.dll (Shared)\WindowsApplication1\obj\x86\Debug\WindowsApplication1.exe
+C:\Cubepoint\ClearingPoint\Releases\5.0\5.00.00\Step 4 - Libraries\05.02 - CubeLibDataSource.dll (Shared)\WindowsApplication1\obj\x86\Debug\WindowsApplication1.xml
+C:\Cubepoint\ClearingPoint\Releases\5.0\5.00.00\Step 4 - Libraries\05.02 - CubeLibDataSource.dll (Shared)\WindowsApplication1\obj\x86\Debug\WindowsApplication1.pdb
