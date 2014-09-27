@@ -1,0 +1,8 @@
+frmConfigWizardPage1 = 74, 111, 1103, 810, C, 22, 22, 625, 470, C
+frmConfigWizardPage3 = 136, 117, 922, 816, C, 44, 44, 647, 492, C
+frmConfigWizardPage4 = 136, 117, 963, 816, C, 66, 66, 669, 514, C
+frmConfigWizardPage5 = 136, 117, 583, 816, C, 88, 88, 691, 536, C
+MConfigWizard = 321, 241, 1196, 888, C
+CConfigWizard = 120, 122, 1175, 821, C
+frmConfigWizardPage6 = 97, 135, 1196, 834, C, 110, 110, 713, 558, C
+frmConfigWizardPage2 = 136, 117, 781, 816, C, 132, 132, 735, 580, C

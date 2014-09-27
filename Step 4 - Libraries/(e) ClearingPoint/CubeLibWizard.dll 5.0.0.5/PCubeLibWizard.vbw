@@ -1,0 +1,5 @@
+FWizard = 0, 0, 0, 0, C, 0, 0, 0, 0, C
+CWizardController = 0, 0, 0, 0, C
+IWizardController = 0, 0, 0, 0, C
+IWizardPage = 0, 0, 0, 0, C
+MWizard = 0, 0, 0, 0, C

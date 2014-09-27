@@ -1,0 +1,8 @@
+cpiNCTS_IEM = 188, 255, 806, 600, C
+cpiNCTS_IEMs = 22, 39, 867, 687, C
+cpiNCTS_IEM_MAP = 0, 0, 0, 0, C
+cpiNCTS_IEM_MAPs = 136, 117, 583, 816, C
+cpiNCTS_IEM_MAP_COND = 0, 0, 0, 0, C
+cpiNCTS_IEM_MAP_CONDs = 136, 117, 583, 816, C
+cpiNCTS_IEM_TMS_Table = 0, 0, 0, 0, C
+cpiNCTS_IEM_TMS_Tables = 136, 117, 988, 816, C

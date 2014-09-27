@@ -1,0 +1,10 @@
+cpiEDI_TMS_Table = 0, 0, 0, 0, C
+cpiEDI_TMS_Tables = 136, 117, 583, 684, C
+cpiEDI_TMS_CORE = 132, 132, 750, 477, C
+cpiEDI_TMS_COREs = 154, 154, 852, 735, C
+cpiEDI_TMS_GROUPS_Table = 0, 0, 0, 0, C
+cpiEDI_TMS_GROUPS_Tables = 136, 117, 583, 816, C
+cpiEDI_TMS_ITEMS_Table = 0, 0, 0, 0, C
+cpiEDI_TMS_ITEMS_Tables = 136, 117, 583, 816, C
+cpiEDI_TMS_SEG_Table = 0, 0, 0, 0, C
+cpiEDI_TMS_SEG_Tables = 136, 117, 1062, 816, C
