@@ -1,0 +1,24 @@
+# database can be any of the following:
+#		ACCESS97 - Microsoft Access 97
+#		ACCESS2003 - Microsoft Access 2003
+#		SQLSERVER - SQL SErver
+#		ORACLE - Oracle Server - Not yet supported
+database=ACCESS
+
+# servername consist of machine name + server instance name
+#servername=EDWIN-PC/SQLFULL
+
+# default admin username for SQL server is "sa"
+username=clearingpoint
+
+# password should not be here or this file should be encrypted
+password=wack2
+
+# set to TRUE if you want to print DEBUG Trace logs
+debug=TRUE
+
+# database path override when registry key is not found
+MdbPath=C:\Cubepoint\ClearingPoint\Releases\5.00\Data
+
+# database path override when registry key is not found
+OutputFilePath=C:\Cubepoint\ClearingPoint\Releases\5.00\Output Files
